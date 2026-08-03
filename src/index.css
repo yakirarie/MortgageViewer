@@ -1,0 +1,120 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Dark theme (default) */
+  --bg-primary: #0B0F14;
+  --bg-surface: #141A21;
+  --bg-surface-raised: #1C242D;
+  --border-subtle: #2A333D;
+  --text-primary: #EAF0F6;
+  --text-secondary: #8B98A5;
+  --accent-primary: #3DDC97;
+  --accent-warning: #F5B759;
+  --accent-danger: #EF5B5B;
+  --accent-info: #5B9DEF;
+
+  /* Track type colors (dark theme) */
+  --track-prime: #5B9DEF;
+  --track-fixed-unlinked: #3DDC97;
+  --track-fixed-linked: #B98CE0;
+  --track-variable-5y: #F5B759;
+  --track-variable-5y-linked: #F58F59;
+  --track-other: #8B98A5;
+}
+
+.light {
+  /* Light theme */
+  --bg-primary: #F7F9FB;
+  --bg-surface: #FFFFFF;
+  --bg-surface-raised: #FFFFFF;
+  --border-subtle: #E1E6EB;
+  --text-primary: #111820;
+  --text-secondary: #5B6672;
+  --accent-primary: #1F9D6E;
+  --accent-warning: #B5790C;
+  --accent-danger: #C0392B;
+  --accent-info: #2A6FD6;
+
+  /* Track type colors (light theme) */
+  --track-prime: #2A6FD6;
+  --track-fixed-unlinked: #1F9D6E;
+  --track-fixed-linked: #8B5FC7;
+  --track-variable-5y: #B5790C;
+  --track-variable-5y-linked: #C25E1F;
+  --track-other: #5B6672;
+}
+
+body {
+  @apply bg-bg-primary text-text-primary antialiased;
+}
+
+/* Custom scrollbar for dark theme */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-bg-surface;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-border-subtle rounded;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-text-secondary;
+}
+
+/* Form input focus states per PRD §5.2 */
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accent-info);
+  box-shadow: 0 0 0 2px rgba(91, 157, 239, 0.1);
+  transition: border-color 150ms ease-in-out, box-shadow 150ms ease-in-out;
+}
+
+/* Apply transitions to all interactive elements */
+input,
+select,
+textarea,
+button {
+  transition: border-color 150ms ease-in-out, box-shadow 150ms ease-in-out, background-color 150ms ease-in-out, color 150ms ease-in-out;
+}
+
+/* Input error state per PRD §5.2 */
+input.error,
+select.error,
+textarea.error {
+  border-color: var(--accent-danger) !important;
+}
+
+/* Button hover states per PRD §5.2 */
+button:active {
+  transform: scale(0.98);
+}
+
+/* Card hover states */
+.card-hover {
+  transition: border-color 150ms ease-in-out, box-shadow 150ms ease-in-out;
+}
+
+.card-hover:hover {
+  border-color: var(--accent-info);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Number input font for tabular nums */
+.font-tabular-nums {
+  font-feature-settings: 'tnum';
+  font-variant-numeric: tabular-nums;
+}
+
+/* Fast transitions for color changes */
+.transition-colors-fast {
+  transition: color 150ms ease-in-out, background-color 150ms ease-in-out, border-color 150ms ease-in-out;
+}
