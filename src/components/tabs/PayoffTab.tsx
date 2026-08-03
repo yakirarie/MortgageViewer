@@ -9,7 +9,11 @@ import {
 } from '../../lib/mortgage-math';
 import { formatCurrency } from '../../lib/utils';
 
-export function PayoffTab() {
+interface PayoffTabProps {
+  t: any;
+}
+
+export function PayoffTab({ t }: PayoffTabProps) {
   const { profile } = useProfile();
   const [lumpSum, setLumpSum] = useState<number>(100000);
   const [reductionMode, setReductionMode] = useState<PayoffReductionMode>('reduce_term');
@@ -76,11 +80,11 @@ export function PayoffTab() {
   const getVerdictText = () => {
     switch (comparison) {
       case 'PAYOFF_WINS':
-        return `Paying off mortgage beats investing by ≈${formatCurrency(totalNpb - investmentGain)} over ${maxTerm} months`;
+        return `${t.payoff.verdictPayoffWins} ≈${formatCurrency(totalNpb - investmentGain)} over ${maxTerm} ${t.common.months}`;
       case 'INVEST_WINS':
-        return `Investing beats mortgage payoff by ≈${formatCurrency(investmentGain - totalNpb)} over ${maxTerm} months`;
+        return `${t.payoff.verdictInvestWins} ≈${formatCurrency(investmentGain - totalNpb)} over ${maxTerm} ${t.common.months}`;
       case 'ROUGHLY_EQUAL':
-        return 'Payoff and investing are roughly equal over this timeframe';
+        return t.payoff.verdictRoughlyEqual;
     }
   };
 
@@ -97,12 +101,12 @@ export function PayoffTab() {
 
   return (
     <div className="p-6 space-y-6">
-      <h2 className="text-2xl font-bold text-text-primary">Early Payoff & Lump-Sum Simulator</h2>
+      <h2 className="text-2xl font-bold text-text-primary">{t.payoff.title}</h2>
 
       {/* Lump Sum Input */}
       <div className="bg-bg-surface-raised border border-border-subtle rounded-lg p-6">
         <div className="flex items-center gap-4">
-          <label className="text-text-primary font-medium">Available Lump Sum (₪):</label>
+          <label className="text-text-primary font-medium">{t.payoff.availableLumpSum}</label>
           <input
             type="text"
             value={formatCurrency(lumpSum)}
@@ -118,17 +122,17 @@ export function PayoffTab() {
       {/* Allocation Controls */}
       <div className="bg-bg-surface-raised border border-border-subtle rounded-lg p-6">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-semibold text-text-primary">Allocation</h3>
+          <h3 className="text-lg font-semibold text-text-primary">{t.payoff.allocation}</h3>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
-              <label className="text-sm text-text-secondary">Mode:</label>
+              <label className="text-sm text-text-secondary">{t.payoff.mode}</label>
               <select
                 value={reductionMode}
                 onChange={(e) => setReductionMode(e.target.value as PayoffReductionMode)}
                 className="bg-bg-surface border border-border-subtle rounded px-2 py-1 text-text-primary text-sm focus:outline-none focus:border-accent-info"
               >
-                <option value="reduce_term">Reduce Term</option>
-                <option value="reduce_payment">Reduce Payment</option>
+                <option value="reduce_term">{t.payoff.reduceTerm}</option>
+                <option value="reduce_payment">{t.payoff.reducePayment}</option>
               </select>
             </div>
             <div className="flex items-center gap-2">
@@ -140,15 +144,15 @@ export function PayoffTab() {
                 className="w-4 h-4 rounded border-border-subtle bg-bg-surface text-accent-primary focus:ring-accent-primary"
               />
               <label htmlFor="notice-waived" className="text-sm text-text-secondary">
-                10+ days notice (waive fee)
+                {t.payoff.noticeWaived}
               </label>
             </div>
             <button
               onClick={handleSuggestOptimal}
               className="px-4 py-2 bg-accent-info text-bg-primary rounded text-sm font-medium hover:opacity-90"
-              title="Suggests an efficient allocation, not a guaranteed-optimal one"
+              title={t.payoff.suggestOptimalTooltip}
             >
-              Suggest Optimal Allocation
+              {t.payoff.suggestOptimalAllocation}
             </button>
           </div>
         </div>
@@ -163,7 +167,7 @@ export function PayoffTab() {
                 <div className="flex justify-between items-center">
                   <span className="text-text-primary">{track.custom_name}</span>
                   <span className="text-text-secondary text-sm">
-                    Max: {formatCurrency(maxAllocation)}
+                    {t.payoff.max} {formatCurrency(maxAllocation)}
                   </span>
                 </div>
                 <div className="flex items-center gap-4">
@@ -193,14 +197,14 @@ export function PayoffTab() {
 
         <div className="mt-4 pt-4 border-t border-border-subtle">
           <div className="flex justify-between items-center">
-            <span className="text-text-secondary">Total Allocated:</span>
+            <span className="text-text-secondary">{t.payoff.totalAllocated}</span>
             <span className={`font-mono ${remainingToAllocate > 0 ? 'text-accent-warning' : 'text-accent-primary'}`}>
               {formatCurrency(totalAllocated)} / {formatCurrency(lumpSum)}
             </span>
           </div>
           {remainingToAllocate > 0 && (
             <div className="text-accent-warning text-sm mt-1">
-              {formatCurrency(remainingToAllocate)} remaining to allocate
+              {formatCurrency(remainingToAllocate)} {t.payoff.remainingToAllocate}
             </div>
           )}
         </div>
@@ -208,7 +212,7 @@ export function PayoffTab() {
 
       {/* Per-Track Results */}
       <div className="bg-bg-surface-raised border border-border-subtle rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Results by Track</h3>
+        <h3 className="text-lg font-semibold text-text-primary mb-4">{t.payoff.resultsByTrack}</h3>
         <div className="space-y-3">
           {trackResults.map(({ track, allocated, result }) => {
             if (allocated === 0) return null;
@@ -217,19 +221,19 @@ export function PayoffTab() {
               <div key={track.track_id} className="bg-bg-surface border border-border-subtle rounded p-4">
                 <div className="flex justify-between items-start mb-2">
                   <span className="text-text-primary font-medium">{track.custom_name}</span>
-                  <span className="text-text-secondary text-sm">{formatCurrency(allocated)} allocated</span>
+                  <span className="text-text-secondary text-sm">{formatCurrency(allocated)} {t.payoff.allocated}</span>
                 </div>
                 <div className="grid grid-cols-3 gap-4 text-sm">
                   <div>
-                    <div className="text-text-secondary">Interest Saved</div>
+                    <div className="text-text-secondary">{t.payoff.interestSaved}</div>
                     <div className="font-mono text-accent-primary">{formatCurrency(result.interestSaved)}</div>
                   </div>
                   <div>
-                    <div className="text-text-secondary">Penalty + Fees</div>
+                    <div className="text-text-secondary">{t.payoff.penaltyFees}</div>
                     <div className="font-mono text-accent-danger">{formatCurrency(result.penaltyPaid + result.noticeFeePaid)}</div>
                   </div>
                   <div>
-                    <div className="text-text-secondary">Net Benefit</div>
+                    <div className="text-text-secondary">{t.payoff.netBenefit}</div>
                     <div className={`font-mono ${result.netPayoffBenefit > 0 ? 'text-accent-primary' : 'text-accent-danger'}`}>
                       {formatCurrency(result.netPayoffBenefit)}
                     </div>
@@ -243,15 +247,15 @@ export function PayoffTab() {
 
       {/* Payoff vs Invest Comparison */}
       <div className="bg-bg-surface-raised border border-border-subtle rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Payoff vs. Invest Comparison</h3>
+        <h3 className="text-lg font-semibold text-text-primary mb-4">{t.payoff.payoffVsInvest}</h3>
         
         <div className="grid grid-cols-2 gap-6 mb-6">
           <div className="bg-bg-surface border border-border-subtle rounded p-4">
-            <div className="text-text-secondary mb-2">Total Payoff Benefit</div>
+            <div className="text-text-secondary mb-2">{t.payoff.totalPayoffBenefit}</div>
             <div className="text-2xl font-mono text-accent-primary">{formatCurrency(totalNpb)}</div>
           </div>
           <div className="bg-bg-surface border border-border-subtle rounded p-4">
-            <div className="text-text-secondary mb-2">Investment Gain ({maxTerm} months)</div>
+            <div className="text-text-secondary mb-2">{t.payoff.investmentGain} ({maxTerm} {t.common.months})</div>
             <div className="text-2xl font-mono text-accent-warning">{formatCurrency(investmentGain)}</div>
           </div>
         </div>
@@ -262,11 +266,11 @@ export function PayoffTab() {
 
         <div className="bg-bg-surface border border-border-subtle rounded p-4 text-sm text-text-secondary">
           <p className="mb-2">
-            <strong>Disclaimer:</strong> Mortgage payoff is a guaranteed, risk-free return. Market investment returns are not guaranteed. This comparison does not account for capital gains tax, or your personal risk tolerance.
+            <strong>{t.payoff.disclaimer}</strong> {t.payoff.disclaimerText}
           </p>
           {noticeWaived && (
             <p className="text-accent-info">
-              Notice fee waived — 10-day advance notice rule (Amlat Hoda'a Mukdamet) applied.
+              {t.payoff.noticeWaivedNote}
             </p>
           )}
         </div>

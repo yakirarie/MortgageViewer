@@ -3,7 +3,11 @@ import { useProfile } from '../../hooks/useProfile';
 import { refinancingBreakeven, effectiveMonthlyPayment } from '../../lib/mortgage-math';
 import { formatCurrency, formatPercent } from '../../lib/utils';
 
-export function RefinanceTab() {
+interface RefinanceTabProps {
+  t: any;
+}
+
+export function RefinanceTab({ t }: RefinanceTabProps) {
   const { profile } = useProfile();
   const [selectedTrackIds, setSelectedTrackIds] = useState<string[]>([]);
   const [newRate, setNewRate] = useState<number>(0.04);
@@ -63,11 +67,11 @@ export function RefinanceTab() {
 
   return (
     <div className="p-6 space-y-6">
-      <h2 className="text-2xl font-bold text-text-primary">Refinancing Breakeven Engine</h2>
+      <h2 className="text-2xl font-bold text-text-primary">{t.refinance.title}</h2>
 
       {/* Track Selection */}
       <div className="bg-bg-surface-raised border border-border-subtle rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Select Tracks to Refinance</h3>
+        <h3 className="text-lg font-semibold text-text-primary mb-4">{t.refinance.selectTracks}</h3>
         <div className="space-y-2">
           {profile.tracks.map((track) => (
             <label key={track.track_id} className="flex items-center gap-3 cursor-pointer">
@@ -88,10 +92,10 @@ export function RefinanceTab() {
 
       {/* New Offer Inputs */}
       <div className="bg-bg-surface-raised border border-border-subtle rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">New Offer Details</h3>
+        <h3 className="text-lg font-semibold text-text-primary mb-4">{t.refinance.newOfferDetails}</h3>
         <div className="grid grid-cols-3 gap-4">
           <div>
-            <label className="block text-sm text-text-secondary mb-1">New Rate (%)</label>
+            <label className="block text-sm text-text-secondary mb-1">{t.refinance.newRate}</label>
             <input
               type="text"
               value={formatPercent(newRate)}
@@ -103,7 +107,7 @@ export function RefinanceTab() {
             />
           </div>
           <div>
-            <label className="block text-sm text-text-secondary mb-1">New Term (months)</label>
+            <label className="block text-sm text-text-secondary mb-1">{t.refinance.newTerm}</label>
             <input
               type="number"
               value={newTerm}
@@ -112,7 +116,7 @@ export function RefinanceTab() {
             />
           </div>
           <div>
-            <label className="block text-sm text-text-secondary mb-1">Other Fees (₪)</label>
+            <label className="block text-sm text-text-secondary mb-1">{t.refinance.otherFees}</label>
             <input
               type="text"
               value={formatCurrency(otherFees)}
@@ -130,38 +134,38 @@ export function RefinanceTab() {
       {selectedTracks.length > 0 && (
         <>
           <div className="bg-bg-surface-raised border border-border-subtle rounded-lg p-6">
-            <h3 className="text-lg font-semibold text-text-primary mb-4">Refinancing Analysis</h3>
+            <h3 className="text-lg font-semibold text-text-primary mb-4">{t.refinance.refinancingAnalysis}</h3>
             
             <div className="grid grid-cols-2 gap-4 mb-6">
               <div className="bg-bg-surface border border-border-subtle rounded p-4">
-                <div className="text-text-secondary mb-2">Old Monthly Payment</div>
+                <div className="text-text-secondary mb-2">{t.refinance.oldMonthlyPayment}</div>
                 <div className="text-2xl font-mono text-text-primary">{formatCurrency(oldBlendedPayment)}</div>
               </div>
               <div className="bg-bg-surface border border-border-subtle rounded p-4">
-                <div className="text-text-secondary mb-2">New Monthly Payment</div>
+                <div className="text-text-secondary mb-2">{t.refinance.newMonthlyPayment}</div>
                 <div className="text-2xl font-mono text-text-primary">{formatCurrency(newBlendedPayment)}</div>
               </div>
             </div>
 
             <div className="space-y-4">
               <div className="flex justify-between items-center">
-                <span className="text-text-secondary">Monthly Savings:</span>
+                <span className="text-text-secondary">{t.refinance.monthlySavings}</span>
                 <span className={`font-mono ${refinanceResult.deltaMonthlyRepayment > 0 ? 'text-accent-primary' : 'text-accent-danger'}`}>
                   {formatCurrency(refinanceResult.deltaMonthlyRepayment)}
                 </span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-text-secondary">Total Switching Costs:</span>
+                <span className="text-text-secondary">{t.refinance.totalSwitchingCosts}</span>
                 <span className="font-mono text-text-secondary">{formatCurrency(totalSwitchingCosts)}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-text-secondary">Breakeven Month:</span>
+                <span className="text-text-secondary">{t.refinance.breakevenMonth}</span>
                 <span className="font-mono text-text-primary">
-                  {refinanceResult.breakevenMonth ? `${Math.round(refinanceResult.breakevenMonth)} months` : 'Never breaks even'}
+                  {refinanceResult.breakevenMonth ? `${Math.round(refinanceResult.breakevenMonth)} ${t.common.months}` : t.refinance.neverBreaksEven}
                 </span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-text-secondary">Lifetime Net Savings:</span>
+                <span className="text-text-secondary">{t.refinance.lifetimeNetSavings}</span>
                 <span className={`font-mono ${refinanceResult.lifetimeNetSavings > 0 ? 'text-accent-primary' : 'text-accent-danger'}`}>
                   {formatCurrency(refinanceResult.lifetimeNetSavings)}
                 </span>
@@ -171,14 +175,14 @@ export function RefinanceTab() {
 
           {/* Sensitivity Analysis */}
           <div className="bg-bg-surface-raised border border-border-subtle rounded-lg p-6">
-            <h3 className="text-lg font-semibold text-text-primary mb-4">Sensitivity Analysis</h3>
+            <h3 className="text-lg font-semibold text-text-primary mb-4">{t.refinance.sensitivityAnalysis}</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border-subtle">
-                    <th className="text-left py-2 px-3 text-text-secondary">Rate</th>
-                    <th className="text-right py-2 px-3 text-text-secondary">Breakeven (months)</th>
-                    <th className="text-right py-2 px-3 text-text-secondary">Lifetime Savings</th>
+                    <th className="text-left py-2 px-3 text-text-secondary">{t.refinance.rate}</th>
+                    <th className="text-right py-2 px-3 text-text-secondary">{t.refinance.breakeven}</th>
+                    <th className="text-right py-2 px-3 text-text-secondary">{t.refinance.lifetimeSavings}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -202,7 +206,7 @@ export function RefinanceTab() {
 
       {selectedTracks.length === 0 && (
         <div className="bg-bg-surface-raised border border-border-subtle rounded-lg p-8 text-center">
-          <p className="text-text-secondary">Select tracks above to see refinancing analysis</p>
+          <p className="text-text-secondary">{t.refinance.selectTracksToSee}</p>
         </div>
       )}
     </div>

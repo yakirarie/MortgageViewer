@@ -3,7 +3,11 @@ import { useProfile } from '../../hooks/useProfile';
 import { weightedAverageRate, effectiveMonthlyPayment } from '../../lib/mortgage-math';
 import { formatCurrency, formatPercent, formatNumber } from '../../lib/utils';
 
-export function PortfolioTab() {
+interface PortfolioTabProps {
+  t: any;
+}
+
+export function PortfolioTab({ t }: PortfolioTabProps) {
   const { profile } = useProfile();
   const [sortField, setSortField] = useState<'name' | 'balance' | 'rate' | 'payment' | 'term'>('balance');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
@@ -56,11 +60,11 @@ export function PortfolioTab() {
 
   return (
     <div className="p-6 space-y-6">
-      <h2 className="text-2xl font-bold text-text-primary">Portfolio & Diagnostics</h2>
+      <h2 className="text-2xl font-bold text-text-primary">{t.portfolio.title}</h2>
 
       {/* Balance Distribution */}
       <div className="bg-bg-surface-raised border border-border-subtle rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Balance Distribution</h3>
+        <h3 className="text-lg font-semibold text-text-primary mb-4">{t.portfolio.balanceDistribution}</h3>
         <div className="space-y-3">
           {profile.tracks.map((track) => {
             const percentage = totalBalance > 0 ? (track.principal_balance / totalBalance) * 100 : 0;
@@ -86,7 +90,7 @@ export function PortfolioTab() {
 
       {/* Track Diagnostics Table */}
       <div className="bg-bg-surface-raised border border-border-subtle rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Track Diagnostics</h3>
+        <h3 className="text-lg font-semibold text-text-primary mb-4">{t.portfolio.trackDiagnostics}</h3>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -95,36 +99,36 @@ export function PortfolioTab() {
                   className="text-left py-2 px-3 text-text-secondary cursor-pointer hover:text-text-primary"
                   onClick={() => handleSort('name')}
                 >
-                  Name {sortField === 'name' && (sortDirection === 'asc' ? '↑' : '↓')}
+                  {t.portfolio.name} {sortField === 'name' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
-                <th className="text-left py-2 px-3 text-text-secondary">Type</th>
+                <th className="text-left py-2 px-3 text-text-secondary">{t.portfolio.type}</th>
                 <th
                   className="text-right py-2 px-3 text-text-secondary cursor-pointer hover:text-text-primary"
                   onClick={() => handleSort('balance')}
                 >
-                  Balance {sortField === 'balance' && (sortDirection === 'asc' ? '↑' : '↓')}
+                  {t.portfolio.balance} {sortField === 'balance' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
                 <th
                   className="text-right py-2 px-3 text-text-secondary cursor-pointer hover:text-text-primary"
                   onClick={() => handleSort('rate')}
                 >
-                  Rate {sortField === 'rate' && (sortDirection === 'asc' ? '↑' : '↓')}
+                  {t.portfolio.rate} {sortField === 'rate' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
-                <th className="text-right py-2 px-3 text-text-secondary">% of Portfolio</th>
+                <th className="text-right py-2 px-3 text-text-secondary">{t.portfolio.portfolioPercent}</th>
                 <th
                   className="text-right py-2 px-3 text-text-secondary cursor-pointer hover:text-text-primary"
                   onClick={() => handleSort('payment')}
                 >
-                  Monthly Pmt {sortField === 'payment' && (sortDirection === 'asc' ? '↑' : '↓')}
+                  {t.portfolio.monthlyPmt} {sortField === 'payment' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
                 <th
                   className="text-right py-2 px-3 text-text-secondary cursor-pointer hover:text-text-primary"
                   onClick={() => handleSort('term')}
                 >
-                  Term Left {sortField === 'term' && (sortDirection === 'asc' ? '↑' : '↓')}
+                  {t.portfolio.termLeft} {sortField === 'term' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
-                <th className="text-right py-2 px-3 text-text-secondary">Reset Window</th>
-                <th className="text-right py-2 px-3 text-text-secondary">Penalty</th>
+                <th className="text-right py-2 px-3 text-text-secondary">{t.portfolio.resetWindow}</th>
+                <th className="text-right py-2 px-3 text-text-secondary">{t.portfolio.penalty}</th>
               </tr>
             </thead>
             <tbody>
@@ -153,10 +157,10 @@ export function PortfolioTab() {
                       {formatCurrency(effectivePayment)}
                     </td>
                     <td className="py-2 px-3 text-right font-mono text-text-primary">
-                      {formatNumber(track.remaining_term_months)} mo
+                      {formatNumber(track.remaining_term_months)} {t.common.months}
                     </td>
                     <td className="py-2 px-3 text-right font-mono text-text-secondary">
-                      {track.months_to_reset !== null ? `${track.months_to_reset} mo` : '—'}
+                      {track.months_to_reset !== null ? `${track.months_to_reset} ${t.common.months}` : '—'}
                     </td>
                     <td className="py-2 px-3 text-right font-mono text-text-secondary">
                       {formatCurrency(track.early_exit_penalty)}
@@ -171,10 +175,10 @@ export function PortfolioTab() {
 
       {/* Weighted Rate Breakdown */}
       <div className="bg-bg-surface-raised border border-border-subtle rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Weighted Rate Breakdown</h3>
+        <h3 className="text-lg font-semibold text-text-primary mb-4">{t.portfolio.weightedRateBreakdown}</h3>
         <div className="space-y-3">
           <div className="flex items-center gap-4 text-sm mb-2">
-            <span className="text-text-secondary w-32">Portfolio Avg:</span>
+            <span className="text-text-secondary w-32">{t.portfolio.portfolioAvg}</span>
             <div className="flex-1 h-2 bg-bg-surface rounded">
               <div className="h-full bg-accent-info" style={{ width: '100%' }} />
             </div>
@@ -212,9 +216,9 @@ export function PortfolioTab() {
 
       {/* Reset Timeline */}
       <div className="bg-bg-surface-raised border border-border-subtle rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Reset Timeline</h3>
+        <h3 className="text-lg font-semibold text-text-primary mb-4">{t.portfolio.resetTimeline}</h3>
         {profile.tracks.filter(t => t.months_to_reset !== null).length === 0 ? (
-          <p className="text-text-secondary text-sm">No tracks with reset windows</p>
+          <p className="text-text-secondary text-sm">{t.portfolio.noResetWindows}</p>
         ) : (
           <div className="space-y-3">
             {profile.tracks
@@ -229,7 +233,7 @@ export function PortfolioTab() {
                     <div className="flex justify-between text-sm">
                       <span className="text-text-primary">{track.custom_name}</span>
                       <span className="text-text-secondary">
-                        Reset in {track.months_to_reset} months
+                        {t.portfolio.resetIn} {track.months_to_reset} {t.common.months}
                       </span>
                     </div>
                     <div className="relative h-6 bg-bg-surface rounded">

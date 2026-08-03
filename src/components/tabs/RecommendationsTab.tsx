@@ -6,7 +6,11 @@ import {
 } from '../../lib/mortgage-math';
 import { formatCurrency, formatPercent } from '../../lib/utils';
 
-export function RecommendationsTab() {
+interface RecommendationsTabProps {
+  t: any;
+}
+
+export function RecommendationsTab({ t }: RecommendationsTabProps) {
   const { profile } = useProfile();
 
   const recommendations = recommendActionsForPortfolio(
@@ -35,13 +39,13 @@ export function RecommendationsTab() {
   const getActionLabel = (action: string) => {
     switch (action) {
       case 'PAY_OFF_NOW':
-        return 'Pay Off Now';
+        return t.recommendations.payOffNow;
       case 'WAIT_FOR_RESET':
-        return 'Wait for Reset';
+        return t.recommendations.waitForReset;
       case 'CONSIDER_REFINANCING':
-        return 'Consider Refinancing';
+        return t.recommendations.considerRefinancing;
       case 'HOLD':
-        return 'Hold';
+        return t.recommendations.hold;
       default:
         return action;
     }
@@ -54,12 +58,12 @@ export function RecommendationsTab() {
 
   return (
     <div className="p-6 space-y-6">
-      <h2 className="text-2xl font-bold text-text-primary">Strategic Recommendations</h2>
+      <h2 className="text-2xl font-bold text-text-primary">{t.recommendations.title}</h2>
 
       {/* Priority Ranking */}
       <div className="bg-bg-surface-raised border border-border-subtle rounded-lg p-6">
         <h3 className="text-lg font-semibold text-text-primary mb-4">
-          Priority Ranking (sorted by action priority)
+          {t.recommendations.priorityRanking} {t.recommendations.sortedByActionPriority}
         </h3>
         <div className="space-y-3">
           {rankedTracks.map((track, index) => {
@@ -109,7 +113,7 @@ export function RecommendationsTab() {
                 {recommendation && (
                   <div className="mt-3 pt-3 border-t border-border-subtle">
                     <div className="text-text-secondary text-sm">
-                      <span className="font-medium">Reason:</span> {recommendation.driver}
+                      <span className="font-medium">{t.recommendations.reason}</span> {recommendation.driver}
                     </div>
                   </div>
                 )}
@@ -121,16 +125,16 @@ export function RecommendationsTab() {
 
       {/* Detailed Risk/Action Matrix */}
       <div className="bg-bg-surface-raised border border-border-subtle rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Risk/Action Matrix</h3>
+        <h3 className="text-lg font-semibold text-text-primary mb-4">{t.recommendations.riskActionMatrix}</h3>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border-subtle">
-                <th className="text-left py-2 px-3 text-text-secondary">Track</th>
-                <th className="text-left py-2 px-3 text-text-secondary">Recommended Action</th>
-                <th className="text-left py-2 px-3 text-text-secondary">Confidence Driver</th>
-                <th className="text-right py-2 px-3 text-text-secondary">Reset Window</th>
-                <th className="text-right py-2 px-3 text-text-secondary">Penalty Exposure</th>
+                <th className="text-left py-2 px-3 text-text-secondary">{t.recommendations.track}</th>
+                <th className="text-left py-2 px-3 text-text-secondary">{t.recommendations.recommendedAction}</th>
+                <th className="text-left py-2 px-3 text-text-secondary">{t.recommendations.confidenceDriver}</th>
+                <th className="text-right py-2 px-3 text-text-secondary">{t.recommendations.resetWindow}</th>
+                <th className="text-right py-2 px-3 text-text-secondary">{t.recommendations.penaltyExposure}</th>
               </tr>
             </thead>
             <tbody>
@@ -165,56 +169,56 @@ export function RecommendationsTab() {
 
       {/* Rule Engine Reference */}
       <div className="bg-bg-surface-raised border border-border-subtle rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Rule Engine Reference</h3>
+        <h3 className="text-lg font-semibold text-text-primary mb-4">{t.recommendations.ruleEngineReference}</h3>
         <div className="space-y-2 text-sm">
           <div className="flex items-start gap-2">
             <span className="px-2 py-1 rounded bg-accent-primary text-bg-primary text-xs font-medium">1</span>
             <div>
-              <span className="text-text-primary font-medium">Pay Off Now:</span>
+              <span className="text-text-primary font-medium">{t.recommendations.rule1}</span>
               <span className="text-text-secondary">
-                {' '}Rate &gt; weighted avg + 0.5% AND zero penalty
+                {' '}{t.recommendations.rule1Desc}
               </span>
             </div>
           </div>
           <div className="flex items-start gap-2">
             <span className="px-2 py-1 rounded bg-accent-warning text-bg-primary text-xs font-medium">2</span>
             <div>
-              <span className="text-text-primary font-medium">Wait for Reset:</span>
+              <span className="text-text-primary font-medium">{t.recommendations.rule2}</span>
               <span className="text-text-secondary">
-                {' '}Reset window ≤ 6 months
+                {' '}{t.recommendations.rule2Desc}
               </span>
             </div>
           </div>
           <div className="flex items-start gap-2">
             <span className="px-2 py-1 rounded bg-accent-info text-bg-primary text-xs font-medium">3</span>
             <div>
-              <span className="text-text-primary font-medium">Consider Refinancing:</span>
+              <span className="text-text-primary font-medium">{t.recommendations.rule3}</span>
               <span className="text-text-secondary">
-                {' '}Rate &gt; market rate + 0.75% AND penalty &lt; 2% of balance
+                {' '}{t.recommendations.rule3Desc}
               </span>
             </div>
           </div>
           <div className="flex items-start gap-2">
             <span className="px-2 py-1 rounded bg-track-other text-bg-primary text-xs font-medium">4</span>
             <div>
-              <span className="text-text-primary font-medium">Hold:</span>
+              <span className="text-text-primary font-medium">{t.recommendations.rule4}</span>
               <span className="text-text-secondary">
-                {' '}Penalty ≥ 5% of balance
+                {' '}{t.recommendations.rule4Desc}
               </span>
             </div>
           </div>
           <div className="flex items-start gap-2">
             <span className="px-2 py-1 rounded bg-track-other text-bg-primary text-xs font-medium">5</span>
             <div>
-              <span className="text-text-primary font-medium">Hold:</span>
+              <span className="text-text-primary font-medium">{t.recommendations.rule5}</span>
               <span className="text-text-secondary">
-                {' '}Default (no strong signal)
+                {' '}{t.recommendations.rule5Desc}
               </span>
             </div>
           </div>
         </div>
         <div className="mt-4 pt-4 border-t border-border-subtle text-xs text-text-secondary">
-          Current weighted rate: {formatPercent(weightedRate)} | Market reference: {formatPercent(profile.global_assumptions.reference_market_rate)}
+          {t.recommendations.weightedRate} {formatPercent(weightedRate)} | {t.recommendations.marketReference} {formatPercent(profile.global_assumptions.reference_market_rate)}
         </div>
       </div>
     </div>

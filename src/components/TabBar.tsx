@@ -3,21 +3,21 @@ type TabId = 'portfolio' | 'payoff' | 'refinance' | 'recommendations';
 interface TabBarProps {
   activeTab: TabId;
   onTabChange: (tab: TabId) => void;
+  t: any;
 }
 
-const TABS: { id: TabId; label: string }[] = [
-  { id: 'portfolio', label: 'Portfolio & Diagnostics' },
-  { id: 'payoff', label: 'Early Payoff' },
-  { id: 'refinance', label: 'Refinancing' },
-  { id: 'recommendations', label: 'Recommendations' },
-];
-
-export function TabBar({ activeTab, onTabChange }: TabBarProps) {
+export function TabBar({ activeTab, onTabChange, t }: TabBarProps) {
+  const tabs: { id: TabId; label: string }[] = [
+    { id: 'portfolio', label: t.tabs.portfolio },
+    { id: 'payoff', label: t.tabs.payoff },
+    { id: 'refinance', label: t.tabs.refinance },
+    { id: 'recommendations', label: t.tabs.recommendations },
+  ];
   return (
     <div className="bg-bg-surface border-b border-border-subtle px-6">
       <div className="container mx-auto">
         <nav className="flex gap-1">
-          {TABS.map((tab) => (
+          {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => onTabChange(tab.id)}

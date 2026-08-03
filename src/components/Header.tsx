@@ -9,9 +9,12 @@ interface HeaderProps {
   onImport: (file: File) => Promise<void>;
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
+  language: 'en' | 'he';
+  onToggleLanguage: () => void;
+  t: any;
 }
 
-export function Header({ onManageTracks, onSettings, profile, onExport, onImport, theme, onToggleTheme }: HeaderProps) {
+export function Header({ onManageTracks, onSettings, profile, onExport, onImport, theme, onToggleTheme, language, onToggleLanguage, t }: HeaderProps) {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -32,7 +35,7 @@ export function Header({ onManageTracks, onSettings, profile, onExport, onImport
     <header className="bg-bg-surface border-b border-border-subtle px-6 py-4">
       <div className="container mx-auto flex justify-between items-center">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-text-primary">Mashkanta Decision Engine</h1>
+          <h1 className="text-2xl font-bold text-text-primary">{t.common.appName}</h1>
           {profile.profile_name && (
             <span className="text-text-secondary text-sm">| {profile.profile_name}</span>
           )}
@@ -43,21 +46,21 @@ export function Header({ onManageTracks, onSettings, profile, onExport, onImport
             onClick={onManageTracks}
             className="px-4 py-2 bg-accent-primary text-bg-primary rounded font-medium hover:opacity-90 text-sm"
           >
-            Manage Tracks
+            {t.common.manageTracks}
           </button>
           
           <button
             onClick={onExport}
             className="px-4 py-2 bg-bg-surface-raised border border-border-subtle rounded text-text-primary hover:border-accent-info text-sm"
           >
-            Save
+            {t.common.save}
           </button>
           
           <button
             onClick={() => fileInputRef.current?.click()}
             className="px-4 py-2 bg-bg-surface-raised border border-border-subtle rounded text-text-primary hover:border-accent-info text-sm"
           >
-            Load
+            {t.common.load}
           </button>
           <input
             ref={fileInputRef}
@@ -70,9 +73,16 @@ export function Header({ onManageTracks, onSettings, profile, onExport, onImport
           <button
             onClick={onSettings}
             className="px-3 py-2 bg-bg-surface-raised border border-border-subtle rounded text-text-primary hover:border-accent-info"
-            title="Settings"
+            title={t.common.settings}
           >
             ⚙
+          </button>
+          <button
+            onClick={onToggleLanguage}
+            className="px-3 py-2 bg-bg-surface-raised border border-border-subtle rounded text-text-primary hover:border-accent-info"
+            title={`Switch to ${language === 'en' ? 'Hebrew' : 'English'}`}
+          >
+            {language === 'en' ? '🇮🇱' : '🇺🇸'}
           </button>
           <button
             onClick={onToggleTheme}

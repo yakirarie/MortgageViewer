@@ -8,6 +8,7 @@ interface SidebarProps {
   globalAssumptions: GlobalAssumptions;
   tracks: Profile['tracks'];
   onGlobalAssumptionsChange: (assumptions: GlobalAssumptions) => void;
+  t: any;
 }
 
 export function Sidebar({ 
@@ -17,6 +18,7 @@ export function Sidebar({
   globalAssumptions,
   tracks,
   onGlobalAssumptionsChange,
+  t,
 }: SidebarProps) {
 
   return (
@@ -39,13 +41,13 @@ export function Sidebar({
             {/* Global Assumptions */}
             <div className="mb-6">
               <h3 className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wide">
-                Global Assumptions
+                {t.sidebar.globalAssumptions}
               </h3>
               
               <div className="space-y-3">
                 <div>
                   <label className="block text-xs text-text-secondary mb-1">
-                    Reference Market Rate
+                    {t.sidebar.referenceMarketRate}
                   </label>
                   <input
                     type="text"
@@ -63,7 +65,7 @@ export function Sidebar({
 
                 <div>
                   <label className="block text-xs text-text-secondary mb-1">
-                    Alternative Investment Return
+                    {t.sidebar.alternativeInvestmentReturn}
                   </label>
                   <input
                     type="text"
@@ -81,7 +83,7 @@ export function Sidebar({
 
                 <div>
                   <label className="block text-xs text-text-secondary mb-1">
-                    Prime Rate Current
+                    {t.sidebar.primeRateCurrent}
                   </label>
                   <input
                     type="text"
@@ -102,11 +104,11 @@ export function Sidebar({
             {/* Profile Quick List */}
             <div>
               <h3 className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wide">
-                Profile Summary
+                {t.sidebar.profileSummary}
               </h3>
               
               {tracks.length === 0 ? (
-                <p className="text-text-secondary text-sm">No tracks yet</p>
+                <p className="text-text-secondary text-sm">{t.common.noTracks}</p>
               ) : (
                 <div className="space-y-2">
                   {tracks.map((track) => (
@@ -124,7 +126,7 @@ export function Sidebar({
                     onClick={onManageTracks}
                     className="w-full text-sm text-accent-info hover:text-accent-primary mt-2"
                   >
-                    Manage Tracks →
+                    {t.sidebar.manageTracks}
                   </button>
                 </div>
               )}

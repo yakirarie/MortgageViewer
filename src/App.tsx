@@ -11,6 +11,7 @@ import { RefinanceTab } from './components/tabs/RefinanceTab';
 import { RecommendationsTab } from './components/tabs/RecommendationsTab';
 import { useProfile } from './hooks/useProfile';
 import { useTheme } from './hooks/useTheme';
+import { useTranslation } from './lib/i18n';
 
 type TabId = 'portfolio' | 'payoff' | 'refinance' | 'recommendations';
 
@@ -29,6 +30,7 @@ function App() {
   } = useProfile();
 
   const { theme, toggleTheme } = useTheme();
+  const { t, language, setLanguage } = useTranslation();
 
   const handleGlobalAssumptionsChange = (assumptions: typeof profile.global_assumptions) => {
     updateProfile({ global_assumptions: assumptions });
@@ -37,15 +39,15 @@ function App() {
   const renderTab = () => {
     switch (activeTab) {
       case 'portfolio':
-        return <PortfolioTab />;
+        return <PortfolioTab t={t} />;
       case 'payoff':
-        return <PayoffTab />;
+        return <PayoffTab t={t} />;
       case 'refinance':
-        return <RefinanceTab />;
+        return <RefinanceTab t={t} />;
       case 'recommendations':
-        return <RecommendationsTab />;
+        return <RecommendationsTab t={t} />;
       default:
-        return <PortfolioTab />;
+        return <PortfolioTab t={t} />;
     }
   };
 
@@ -60,6 +62,9 @@ function App() {
         onImport={importProfile}
         theme={theme}
         onToggleTheme={toggleTheme}
+        language={language}
+        onToggleLanguage={() => setLanguage(language === 'en' ? 'he' : 'en')}
+        t={t}
       />
 
       {/* Main Layout */}
@@ -72,19 +77,20 @@ function App() {
           globalAssumptions={profile.global_assumptions}
           tracks={profile.tracks}
           onGlobalAssumptionsChange={handleGlobalAssumptionsChange}
+          t={t}
         />
 
         {/* Main Content Area */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* KPI Row */}
-          <KpiRow tracks={profile.tracks} />
+          <KpiRow tracks={profile.tracks} t={t} />
 
           {/* Tab Bar */}
-          <TabBar activeTab={activeTab} onTabChange={setActiveTab} />
+          <TabBar activeTab={activeTab} onTabChange={setActiveTab} t={t} />
 
           {/* Tab Content or Empty State */}
           {profile.tracks.length === 0 ? (
-            <EmptyState onLoadDemoProfile={loadDemoProfile} />
+            <EmptyState onLoadDemoProfile={loadDemoProfile} t={t} />
           ) : (
             <div className="flex-1 overflow-y-auto">
               {renderTab()}

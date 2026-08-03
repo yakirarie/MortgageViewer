@@ -118,3 +118,30 @@ button:active {
 .transition-colors-fast {
   transition: color 150ms ease-in-out, background-color 150ms ease-in-out, border-color 150ms ease-in-out;
 }
+
+/* RTL support */
+[dir="rtl"] {
+  direction: rtl;
+}
+
+[dir="rtl"] .text-right {
+  text-align: left;
+}
+
+[dir="rtl"] .text-left {
+  text-align: right;
+}
+
+[dir="rtl"] .flex-row {
+  flex-direction: row-reverse;
+}
+
+[dir="rtl"] input[type="text"],
+[dir="rtl"] input[type="number"] {
+  text-align: right;
+}
+
+[dir="rtl"] .font-mono {
+  direction: ltr;
+  text-align: right;
+}
