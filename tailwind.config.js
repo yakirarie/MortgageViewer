@@ -27,6 +27,9 @@ export default {
           danger: 'var(--accent-danger)',
           info: 'var(--accent-info)',
         },
+        success: {
+          DEFAULT: 'var(--success-color)',
+        },
         track: {
           prime: 'var(--track-prime)',
           'fixed-unlinked': 'var(--track-fixed-unlinked)',

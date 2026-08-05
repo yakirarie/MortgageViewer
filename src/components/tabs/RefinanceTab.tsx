@@ -1,14 +1,14 @@
 import { useState } from 'react';
-import { useProfile } from '../../hooks/useProfile';
+import type { Profile } from '../../lib/types';
 import { refinancingBreakeven, effectiveMonthlyPayment } from '../../lib/mortgage-math';
 import { formatCurrency, formatPercent } from '../../lib/utils';
 
 interface RefinanceTabProps {
   t: any;
+  profile: Profile;
 }
 
-export function RefinanceTab({ t }: RefinanceTabProps) {
-  const { profile } = useProfile();
+export function RefinanceTab({ t, profile }: RefinanceTabProps) {
   const [selectedTrackIds, setSelectedTrackIds] = useState<string[]>([]);
   const [newRate, setNewRate] = useState<number>(0.04);
   const [newTerm, setNewTerm] = useState<number>(180);

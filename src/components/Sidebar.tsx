@@ -1,23 +1,16 @@
-import type { Profile, GlobalAssumptions } from '../lib/types';
-import { formatPercent, parsePercentInput } from '../lib/utils';
+import type { Profile } from '../lib/types';
 
 interface SidebarProps {
-  onManageTracks: () => void;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
-  globalAssumptions: GlobalAssumptions;
   tracks: Profile['tracks'];
-  onGlobalAssumptionsChange: (assumptions: GlobalAssumptions) => void;
   t: any;
 }
 
 export function Sidebar({ 
-  onManageTracks, 
   collapsed = false, 
   onToggleCollapse,
-  globalAssumptions,
   tracks,
-  onGlobalAssumptionsChange,
   t,
 }: SidebarProps) {
 
@@ -38,69 +31,6 @@ export function Sidebar({
 
         {!collapsed && (
           <>
-            {/* Global Assumptions */}
-            <div className="mb-6">
-              <h3 className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wide">
-                {t.sidebar.globalAssumptions}
-              </h3>
-              
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs text-text-secondary mb-1">
-                    {t.sidebar.referenceMarketRate}
-                  </label>
-                  <input
-                    type="text"
-                    value={formatPercent(globalAssumptions.reference_market_rate)}
-                    onChange={(e) => {
-                      const value = parsePercentInput(e.target.value);
-                      onGlobalAssumptionsChange({
-                        ...globalAssumptions,
-                        reference_market_rate: value,
-                      });
-                    }}
-                    className="w-full bg-bg-surface-raised border border-border-subtle rounded px-2 py-1 text-text-primary text-sm font-mono text-right focus:outline-none focus:border-accent-info font-tabular-nums"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs text-text-secondary mb-1">
-                    {t.sidebar.alternativeInvestmentReturn}
-                  </label>
-                  <input
-                    type="text"
-                    value={formatPercent(globalAssumptions.alternative_investment_annual_return)}
-                    onChange={(e) => {
-                      const value = parsePercentInput(e.target.value);
-                      onGlobalAssumptionsChange({
-                        ...globalAssumptions,
-                        alternative_investment_annual_return: value,
-                      });
-                    }}
-                    className="w-full bg-bg-surface-raised border border-border-subtle rounded px-2 py-1 text-text-primary text-sm font-mono text-right focus:outline-none focus:border-accent-info font-tabular-nums"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs text-text-secondary mb-1">
-                    {t.sidebar.primeRateCurrent}
-                  </label>
-                  <input
-                    type="text"
-                    value={formatPercent(globalAssumptions.prime_rate_current)}
-                    onChange={(e) => {
-                      const value = parsePercentInput(e.target.value);
-                      onGlobalAssumptionsChange({
-                        ...globalAssumptions,
-                        prime_rate_current: value,
-                      });
-                    }}
-                    className="w-full bg-bg-surface-raised border border-border-subtle rounded px-2 py-1 text-text-primary text-sm font-mono text-right focus:outline-none focus:border-accent-info font-tabular-nums"
-                  />
-                </div>
-              </div>
-            </div>
-
             {/* Profile Quick List */}
             <div>
               <h3 className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wide">
@@ -122,12 +52,6 @@ export function Sidebar({
                       </div>
                     </div>
                   ))}
-                  <button
-                    onClick={onManageTracks}
-                    className="w-full text-sm text-accent-info hover:text-accent-primary mt-2"
-                  >
-                    {t.sidebar.manageTracks}
-                  </button>
                 </div>
               )}
             </div>

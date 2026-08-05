@@ -1,13 +1,32 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { Profile, Track } from '../lib/types';
 import { validateProfile, validateTrack } from '../lib/validation';
 import { createDemoProfile, createEmptyProfile, createDefaultTrack, duplicateTrack } from '../lib/demo-profile';
 import { downloadJson, uploadJson, getCurrentTimestamp } from '../lib/utils';
 import { spitzerMonthlyPayment } from '../lib/mortgage-math';
 
+const STORAGE_KEY = 'mashkanta-profile';
+
 export function useProfile() {
-  const [profile, setProfile] = useState<Profile>(() => createEmptyProfile());
+  const [profile, setProfile] = useState<Profile>(() => {
+    // Try to load from localStorage on initialization
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (error) {
+        console.error('Failed to load saved profile:', error);
+        return createEmptyProfile();
+      }
+    }
+    return createEmptyProfile();
+  });
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+
+  // Auto-save to localStorage whenever profile changes
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+  }, [profile]);
 
   // Auto-calculate monthly payment when relevant fields change
   const autoCalculatePayment = useCallback((track: Track): Track => {
@@ -181,6 +200,14 @@ export function useProfile() {
     setValidationErrors({});
   }, []);
 
+  // Reset to empty profile (clears localStorage too)
+  const resetProfile = useCallback(() => {
+    const empty = createEmptyProfile();
+    setProfile(empty);
+    setValidationErrors({});
+    localStorage.removeItem(STORAGE_KEY);
+  }, []);
+
   // Export profile to JSON
   const exportProfile = useCallback(() => {
     const filename = `mashkanta-profile-${new Date().toISOString().split('T')[0]}.json`;
@@ -235,6 +262,7 @@ export function useProfile() {
     recalculatePayment,
     loadDemoProfile,
     clearAllTracks,
+    resetProfile,
     exportProfile,
     importProfile,
     getFieldError,

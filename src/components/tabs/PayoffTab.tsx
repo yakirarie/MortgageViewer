@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useProfile } from '../../hooks/useProfile';
+import type { Profile } from '../../lib/types';
 import {
   netPayoffBenefit,
   suggestOptimalAllocation,
@@ -11,10 +11,10 @@ import { formatCurrency } from '../../lib/utils';
 
 interface PayoffTabProps {
   t: any;
+  profile: Profile;
 }
 
-export function PayoffTab({ t }: PayoffTabProps) {
-  const { profile } = useProfile();
+export function PayoffTab({ t, profile }: PayoffTabProps) {
   const [lumpSum, setLumpSum] = useState<number>(100000);
   const [reductionMode, setReductionMode] = useState<PayoffReductionMode>('reduce_term');
   const [noticeWaived, setNoticeWaived] = useState(false);

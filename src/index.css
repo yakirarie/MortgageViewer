@@ -14,6 +14,7 @@
   --accent-warning: #F5B759;
   --accent-danger: #EF5B5B;
   --accent-info: #5B9DEF;
+  --success-color: #3DDC97;
 
   /* Track type colors (dark theme) */
   --track-prime: #5B9DEF;
@@ -36,6 +37,7 @@
   --accent-warning: #B5790C;
   --accent-danger: #C0392B;
   --accent-info: #2A6FD6;
+  --success-color: #1F9D6E;
 
   /* Track type colors (light theme) */
   --track-prime: #2A6FD6;

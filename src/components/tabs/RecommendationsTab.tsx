@@ -1,4 +1,4 @@
-import { useProfile } from '../../hooks/useProfile';
+import type { Profile } from '../../lib/types';
 import {
   recommendActionsForPortfolio,
   rankTracksByPriority,
@@ -8,10 +8,10 @@ import { formatCurrency, formatPercent } from '../../lib/utils';
 
 interface RecommendationsTabProps {
   t: any;
+  profile: Profile;
 }
 
-export function RecommendationsTab({ t }: RecommendationsTabProps) {
-  const { profile } = useProfile();
+export function RecommendationsTab({ t, profile }: RecommendationsTabProps) {
 
   const recommendations = recommendActionsForPortfolio(
     profile.tracks,

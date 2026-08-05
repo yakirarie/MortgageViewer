@@ -1,10 +1,10 @@
 
 interface EmptyStateProps {
-  onLoadDemoProfile: () => void;
+  onOpenProfileSettings: () => void;
   t: any;
 }
 
-export function EmptyState({ onLoadDemoProfile, t }: EmptyStateProps) {
+export function EmptyState({ onOpenProfileSettings, t }: EmptyStateProps) {
   return (
     <div className="flex-1 flex items-center justify-center">
       <div className="text-center">
@@ -17,10 +17,10 @@ export function EmptyState({ onLoadDemoProfile, t }: EmptyStateProps) {
         </p>
         <div className="flex gap-4 justify-center">
           <button
-            onClick={onLoadDemoProfile}
+            onClick={onOpenProfileSettings}
             className="px-6 py-3 bg-accent-primary text-bg-primary rounded font-medium hover:opacity-90"
           >
-            {t.emptyState.loadDemoProfile}
+            ⚙ Profile Settings
           </button>
         </div>
       </div>

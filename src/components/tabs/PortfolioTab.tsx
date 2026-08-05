@@ -1,14 +1,14 @@
 import { useState } from 'react';
-import { useProfile } from '../../hooks/useProfile';
+import type { Profile } from '../../lib/types';
 import { weightedAverageRate, effectiveMonthlyPayment } from '../../lib/mortgage-math';
 import { formatCurrency, formatPercent, formatNumber } from '../../lib/utils';
 
 interface PortfolioTabProps {
   t: any;
+  profile: Profile;
 }
 
-export function PortfolioTab({ t }: PortfolioTabProps) {
-  const { profile } = useProfile();
+export function PortfolioTab({ t, profile }: PortfolioTabProps) {
   const [sortField, setSortField] = useState<'name' | 'balance' | 'rate' | 'payment' | 'term'>('balance');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
