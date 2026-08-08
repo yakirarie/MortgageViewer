@@ -284,12 +284,175 @@ export function simulatePrimeAmortization(
   };
 }
 
+export interface FixedAmortizationResult {
+  /**
+   * Total payoff balance today = net principal balance + accrued daily interest
+   * since the last payment date. This is the figure a bank quotes as the
+   * "current balance" / payoff amount.
+   */
+  currentBalance: number;
+  /** Net principal balance today (before accrued daily interest). */
+  netPrincipalBalance: number;
+  /** Accrued daily interest since the last payment date (ריבית צבורה). */
+  accruedInterest: number;
+  /** The monthly payment currently in effect (fixed — never changes). */
+  currentMonthlyPayment: number;
+  /** Months remaining on the loan today. */
+  remainingTermMonths: number;
+  /** Number of months elapsed since the start date (clamped to the term). */
+  monthsElapsed: number;
+}
+
+/**
+ * Simulate a Fixed Unlinked (Klatz) track's amortization from its start date to
+ * today. Unlike Prime tracks, the rate is completely immutable — it never
+ * changes over the life of the loan. The monthly payment is therefore constant
+ * (computed once via the Spitzer formula at origination) and the balance simply
+ * amortizes down month by month.
+ *
+ * Returns the current balance, current payment, and remaining term.
+ *
+ * Falls back to the original principal / original term when there is no start
+ * date (nothing to simulate).
+ */
+export function simulateFixedAmortization(
+  originalPrincipal: number,
+  startDate: string,
+  originalTermMonths: number,
+  annualRate: number,
+  firstPayoutDate?: string
+): FixedAmortizationResult {
+  if (!startDate || originalTermMonths <= 0) {
+    return {
+      currentBalance: originalPrincipal,
+      netPrincipalBalance: originalPrincipal,
+      accruedInterest: 0,
+      currentMonthlyPayment: 0,
+      remainingTermMonths: originalTermMonths,
+      monthsElapsed: 0,
+    };
+  }
+
+  const start = new Date(startDate).getTime();
+  if (isNaN(start)) {
+    return {
+      currentBalance: originalPrincipal,
+      netPrincipalBalance: originalPrincipal,
+      accruedInterest: 0,
+      currentMonthlyPayment: 0,
+      remainingTermMonths: originalTermMonths,
+      monthsElapsed: 0,
+    };
+  }
+
+  // The amortization clock starts at the loan's start date (same convention as
+  // the Prime track — the bank counts full months since the loan was taken out).
+  const elapsed = Math.min(monthsBetween(new Date(startDate), new Date()), originalTermMonths);
+
+  // Fixed rate → the payment is constant. Compute it once at origination.
+  let netPrincipal = originalPrincipal;
+  let monthsLeft = originalTermMonths;
+  const originationPayment = spitzerMonthlyPayment(netPrincipal, annualRate, monthsLeft);
+
+  for (let m = 0; m < elapsed; m++) {
+    const r = annualRate / 12;
+    const interest = netPrincipal * r;
+    const principal = originationPayment - interest;
+    netPrincipal = Math.max(0, netPrincipal - principal);
+    monthsLeft -= 1;
+    if (netPrincipal <= 0) break;
+  }
+
+  // The payment currently in effect is the Spitzer payment at the current net
+  // principal over the remaining term (identical to the origination payment for
+  // a fixed rate, but recomputed to reflect any rounding drift).
+  const currentMonthlyPayment =
+    netPrincipal > 0 && monthsLeft > 0
+      ? spitzerMonthlyPayment(netPrincipal, annualRate, monthsLeft)
+      : originationPayment;
+
+  // Accrued daily interest (ריבית צבורה) since the last payment date. The last
+  // payment is due on the monthly payment day-of-month (from the first payout
+  // date, falling back to the start date) in the most recent month.
+  const paymentDay = firstPayoutDate
+    ? new Date(firstPayoutDate).getDate()
+    : new Date(startDate).getDate();
+  const today = new Date();
+  const lastPaymentDate = new Date(today.getFullYear(), today.getMonth(), paymentDay);
+  if (lastPaymentDate.getTime() > today.getTime()) {
+    // Today is before this month's payment day → last payment was last month.
+    lastPaymentDate.setMonth(lastPaymentDate.getMonth() - 1);
+  }
+  const accruedDays = Math.max(0, (today.getTime() - lastPaymentDate.getTime()) / 86400000);
+  const accruedInterest =
+    netPrincipal > 0 ? netPrincipal * (annualRate / 365) * accruedDays : 0;
+
+  return {
+    currentBalance: netPrincipal + accruedInterest,
+    netPrincipalBalance: netPrincipal,
+    accruedInterest,
+    currentMonthlyPayment,
+    remainingTermMonths: monthsLeft,
+    monthsElapsed: elapsed,
+  };
+}
+
+export interface FixedGapPenaltyInput {
+  /** Net principal balance today (₪). */
+  netPrincipalBalance: number;
+  /** The fixed annual rate on the loan (decimal, e.g. 0.049). */
+  currentRate: number;
+  /** The average BoI base rate over the remaining term (decimal). */
+  boiAverageRate: number;
+  /** Months remaining on the loan. */
+  remainingMonths: number;
+  /** Annual discount rate for the PV calculation (decimal). Defaults to `currentRate`. */
+  discountRate?: number;
+}
+
+/**
+ * Early-payoff gap penalty for a Fixed Unlinked (Klatz) track.
+ *
+ * The bank compensates itself for the interest it would have earned had the
+ * loan run to term. The penalty is the present value of the monthly interest
+ * rate differential (loan rate − BoI average rate) applied to the remaining
+ * principal, discounted over the remaining months:
+ *
+ *   Penalty = Σ_{m=1..n} ( (R − R_boi) / 12 × B ) / (1 + d/12)^m
+ *
+ * Returns 0 when the loan rate is at or below the BoI average rate (no gap to
+ * compensate), or when the balance/term is zero.
+ */
+export function fixedTrackGapPenalty({
+  netPrincipalBalance,
+  currentRate,
+  boiAverageRate,
+  remainingMonths,
+  discountRate,
+}: FixedGapPenaltyInput): number {
+  if (netPrincipalBalance <= 0 || remainingMonths <= 0) return 0;
+
+  const gap = currentRate - boiAverageRate;
+  if (gap <= 0) return 0; // no penalty when the loan rate is at/below market
+
+  const monthlyGap = gap / 12;
+  const monthlyDiscount = (discountRate ?? currentRate) / 12;
+
+  let penalty = 0;
+  for (let m = 1; m <= remainingMonths; m++) {
+    const monthlyInterestGap = netPrincipalBalance * monthlyGap;
+    penalty += monthlyInterestGap / Math.pow(1 + monthlyDiscount, m);
+  }
+  return penalty;
+}
+
 
 
 
 // ---------------------------------------------------------------------------
 // §4.1 Core Portfolio Math
 // ---------------------------------------------------------------------------
+
 
 
 /** Weighted average interest rate across tracks. Returns 0 for an empty/zero-balance portfolio. */

@@ -169,11 +169,55 @@ export function populatePrimeRateHistory(
 }
 
 /**
+ * The average BoI base rate over a date range. Used by the Fixed Unlinked
+ * (Klatz) track's early-payoff gap penalty: the bank compensates itself for the
+ * difference between the loan's fixed rate and the average BoI base rate over
+ * the remaining term.
+ *
+ * The average is computed by weighting each base-rate period by its duration
+ * (in days) within `[fromDate, toDate]`. If `toDate` is omitted, it defaults to
+ * today. If `fromDate` predates the table, the oldest known rate is used for the
+ * pre-table portion. Returns the current base rate when the range is invalid.
+ */
+export function getBoiAverageRate(fromDate: string, toDate?: string): number {
+  if (!fromDate) return getCurrentBaseRate();
+  const from = new Date(fromDate).getTime();
+  if (isNaN(from)) return getCurrentBaseRate();
+  const to = toDate ? new Date(toDate).getTime() : Date.now();
+  if (isNaN(to) || to <= from) return getCurrentBaseRate();
+
+  // Build the timeline of base-rate periods within [from, to].
+  // Each period runs from its entry date to the next entry's date (or `to`).
+  let totalDays = 0;
+  let weightedSum = 0;
+
+  for (let i = 0; i < BOI_BASE_RATE_HISTORY.length; i++) {
+    const entry = BOI_BASE_RATE_HISTORY[i];
+    const entryTime = new Date(entry.date).getTime();
+    if (entryTime > to) break; // beyond the range
+
+    const periodStart = Math.max(entryTime, from);
+    const nextEntry = BOI_BASE_RATE_HISTORY[i - 1]; // next entry is the *newer* one (list is newest→oldest)
+    const periodEnd = nextEntry ? Math.min(new Date(nextEntry.date).getTime(), to) : to;
+
+    if (periodEnd > periodStart) {
+      const days = (periodEnd - periodStart) / 86400000;
+      totalDays += days;
+      weightedSum += days * entry.base_rate;
+    }
+  }
+
+  if (totalDays <= 0) return getCurrentBaseRate();
+  return weightedSum / totalDays;
+}
+
+/**
  * Get current market rates (manually maintained)
  * Updated: July 2026
  * Source: Bank of Israel public data
  */
 export function getMarketRates(): MarketRates {
+
   return {
     reference_market_rate: 0.042,      // 4.2% - Current market rate for new mortgages
     alternative_investment_annual_return: 0.06,  // 6% - Conservative investment return (gov bonds)

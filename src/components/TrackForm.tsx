@@ -7,7 +7,8 @@ import { shouldShowResetWindow, getDefaultCpiLinked, getDefaultRate } from '../l
 import { TRACK_TYPES } from '../lib/validation';
 import { populatePrimeRateHistory, getPrimeBaseRateAt, primeEffectiveRate, getMarketRates } from '../lib/rates-api';
 
-import { simulatePrimeAmortization, monthsBetween } from '../lib/mortgage-math';
+import { simulatePrimeAmortization, simulateFixedAmortization, monthsBetween } from '../lib/mortgage-math';
+
 
 
 
@@ -44,6 +45,8 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
 
   const showResetWindow = shouldShowResetWindow(track.track_type);
   const isPrime = track.track_type === 'PRIME';
+  const isFixed = track.track_type === 'FIXED_UNLINKED';
+
 
   // Local string state so the user can type freely (including '-' and '.')
   // without the controlled input resetting mid-typing.
@@ -119,21 +122,37 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
       startDate &&
       history.length > 0
     ) {
-      const result = simulatePrimeAmortization(
-        originalPrincipal,
-        startDate,
-        originalTerm,
-        history,
-        firstPayoutDate
-      );
-      updates.principal_balance = result.currentBalance;
-
-      updates.remaining_term_months = result.remainingTermMonths;
-      updates.monthly_repayment = result.currentMonthlyPayment;
-      updates.is_payment_manual_override = false;
+      if (isFixed) {
+        // Fixed Unlinked (Klatz): the rate is immutable, so the amortization is
+        // a plain Spitzer schedule with a constant rate.
+        const result = simulateFixedAmortization(
+          originalPrincipal,
+          startDate,
+          originalTerm,
+          annualRate,
+          firstPayoutDate
+        );
+        updates.principal_balance = result.currentBalance;
+        updates.remaining_term_months = result.remainingTermMonths;
+        updates.monthly_repayment = result.currentMonthlyPayment;
+        updates.is_payment_manual_override = false;
+      } else {
+        const result = simulatePrimeAmortization(
+          originalPrincipal,
+          startDate,
+          originalTerm,
+          history,
+          firstPayoutDate
+        );
+        updates.principal_balance = result.currentBalance;
+        updates.remaining_term_months = result.remainingTermMonths;
+        updates.monthly_repayment = result.currentMonthlyPayment;
+        updates.is_payment_manual_override = false;
+      }
     }
     return updates;
   };
+
 
   // Derived values for the read-only "Auto-Calculated" section.
   const derived = (() => {
@@ -146,6 +165,15 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
       track.start_date &&
       history.length > 0
     ) {
+      if (isFixed) {
+        return simulateFixedAmortization(
+          track.original_principal,
+          track.start_date,
+          originalTerm,
+          track.annual_interest_rate,
+          track.first_payout_date
+        );
+      }
       return simulatePrimeAmortization(
         track.original_principal,
         track.start_date,
@@ -153,10 +181,10 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
         history,
         track.first_payout_date
       );
-
     }
     return null;
   })();
+
 
 
   const displayBalance = derived ? derived.currentBalance : track.principal_balance;

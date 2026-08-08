@@ -20,7 +20,10 @@ import {
   effectiveRateForMonth,
   spitzerMonthlyPaymentWithHistory,
   simulatePrimeAmortization,
+  simulateFixedAmortization,
+  fixedTrackGapPenalty,
 } from "./mortgage-math";
+
 
 
 
@@ -676,6 +679,202 @@ describe("simulatePrimeAmortization", () => {
   });
 
 });
+
+// ---------------------------------------------------------------------------
+// §4.1b Fixed Unlinked (Klatz) Track Engine
+// ---------------------------------------------------------------------------
+
+describe("simulateFixedAmortization", () => {
+  it("falls back to the original principal/term when there is no start date", () => {
+    const result = simulateFixedAmortization(800000, "", 360, 0.049);
+    expect(result.currentBalance).toBe(800000);
+    expect(result.remainingTermMonths).toBe(360);
+    expect(result.monthsElapsed).toBe(0);
+    expect(result.currentMonthlyPayment).toBe(0);
+  });
+
+  it("falls back when the start date is invalid", () => {
+    const result = simulateFixedAmortization(800000, "not-a-date", 360, 0.049);
+    expect(result.currentBalance).toBe(800000);
+    expect(result.remainingTermMonths).toBe(360);
+  });
+
+  it("matches the hand-computed Klatz spec values (800k @ 4.9%, 360m, 34 elapsed)", () => {
+    // Spec: Original 800,000 @ 4.90%, 360 months, 34 months elapsed.
+    // Expected: PMT ≈ 4,245.81, net principal ≈ 764,365, remaining 326.
+    const start = new Date();
+    start.setMonth(start.getMonth() - 34);
+    const startDate = start.toISOString().slice(0, 10);
+
+    const result = simulateFixedAmortization(800000, startDate, 360, 0.049);
+
+    expect(result.monthsElapsed).toBe(34);
+    expect(result.remainingTermMonths).toBe(326);
+
+    // Monthly payment matches the Spitzer formula at origination.
+    expect(result.currentMonthlyPayment).toBeCloseTo(4245.81, 1);
+
+    // Net principal balance matches the hand-computed value (within rounding).
+    expect(result.netPrincipalBalance).toBeCloseTo(764365.28, 0);
+
+    // Daily interest accrual ≈ 102.61/day.
+    const dailyInterest = result.netPrincipalBalance * (0.049 / 365);
+    expect(dailyInterest).toBeCloseTo(102.61, 1);
+
+    // Total payoff balance = net principal + accrued daily interest.
+    expect(result.currentBalance).toBeGreaterThanOrEqual(result.netPrincipalBalance);
+    expect(result.accruedInterest).toBeGreaterThanOrEqual(0);
+  });
+
+  it("produces a constant payment that never changes (immutable rate)", () => {
+    const start = new Date();
+    start.setMonth(start.getMonth() - 12);
+    const startDate = start.toISOString().slice(0, 10);
+
+    const result = simulateFixedAmortization(500000, startDate, 360, 0.05);
+
+    // The current payment equals the origination payment (fixed rate).
+    expect(result.currentMonthlyPayment).toBeCloseTo(
+      spitzerMonthlyPayment(500000, 0.05, 360),
+      1
+    );
+  });
+
+  it("clamps elapsed months to the original term", () => {
+    const start = new Date();
+    start.setMonth(start.getMonth() - 400);
+    const startDate = start.toISOString().slice(0, 10);
+
+    const result = simulateFixedAmortization(500000, startDate, 360, 0.05);
+
+    expect(result.monthsElapsed).toBe(360);
+    expect(result.remainingTermMonths).toBe(0);
+    expect(result.currentBalance).toBe(0);
+  });
+
+  it("counts elapsed months from the start date regardless of the first payout date", () => {
+    const start = new Date();
+    start.setMonth(start.getMonth() - 34);
+    const startDate = start.toISOString().slice(0, 10);
+
+    const payout = new Date(start);
+    payout.setMonth(payout.getMonth() + 1);
+    const payoutDate = payout.toISOString().slice(0, 10);
+
+    const fromSigning = simulateFixedAmortization(200000, startDate, 360, 0.05);
+    const fromPayout = simulateFixedAmortization(200000, startDate, 360, 0.05, payoutDate);
+
+    // Elapsed months and remaining term are identical — both counted from the
+    // start date.
+    expect(fromPayout.monthsElapsed).toBe(fromSigning.monthsElapsed);
+    expect(fromPayout.remainingTermMonths).toBe(fromSigning.remainingTermMonths);
+
+    // Net principal is identical too (same amortization schedule).
+    expect(fromPayout.netPrincipalBalance).toBeCloseTo(fromSigning.netPrincipalBalance, 5);
+
+    // The total payoff balance differs only by the accrued daily interest.
+    expect(fromPayout.accruedInterest).toBeGreaterThanOrEqual(0);
+    expect(fromPayout.currentBalance).toBeGreaterThanOrEqual(fromPayout.netPrincipalBalance);
+  });
+});
+
+describe("fixedTrackGapPenalty", () => {
+  it("returns 0 when the loan rate is at or below the BoI average rate", () => {
+    const penalty = fixedTrackGapPenalty({
+      netPrincipalBalance: 764365.28,
+      currentRate: 0.049,
+      boiAverageRate: 0.05, // loan rate below market → no gap
+      remainingMonths: 326,
+    });
+    expect(penalty).toBe(0);
+  });
+
+  it("returns 0 for a zero balance or zero remaining months", () => {
+    expect(
+      fixedTrackGapPenalty({
+        netPrincipalBalance: 0,
+        currentRate: 0.049,
+        boiAverageRate: 0.035,
+        remainingMonths: 326,
+      })
+    ).toBe(0);
+    expect(
+      fixedTrackGapPenalty({
+        netPrincipalBalance: 764365.28,
+        currentRate: 0.049,
+        boiAverageRate: 0.035,
+        remainingMonths: 0,
+      })
+    ).toBe(0);
+  });
+
+  it("computes a positive penalty when the loan rate exceeds the BoI average", () => {
+    // 764,365.28 @ 4.9% vs BoI avg 3.5% over 326 months.
+    // Gap = 1.4% annual → ~0.1167% monthly on the balance.
+    const penalty = fixedTrackGapPenalty({
+      netPrincipalBalance: 764365.28,
+      currentRate: 0.049,
+      boiAverageRate: 0.035,
+      remainingMonths: 326,
+    });
+    expect(penalty).toBeGreaterThan(0);
+
+    // The penalty should be a meaningful fraction of the balance (the bank
+    // compensates itself for the rate gap over the remaining term).
+    expect(penalty).toBeGreaterThan(10000);
+    expect(penalty).toBeLessThan(764365.28);
+  });
+
+  it("produces a larger penalty for a larger rate gap", () => {
+    const smallGap = fixedTrackGapPenalty({
+      netPrincipalBalance: 500000,
+      currentRate: 0.05,
+      boiAverageRate: 0.04,
+      remainingMonths: 120,
+    });
+    const largeGap = fixedTrackGapPenalty({
+      netPrincipalBalance: 500000,
+      currentRate: 0.06,
+      boiAverageRate: 0.04,
+      remainingMonths: 120,
+    });
+    expect(largeGap).toBeGreaterThan(smallGap);
+  });
+
+  it("produces a larger penalty for a longer remaining term", () => {
+    const shortTerm = fixedTrackGapPenalty({
+      netPrincipalBalance: 500000,
+      currentRate: 0.05,
+      boiAverageRate: 0.04,
+      remainingMonths: 60,
+    });
+    const longTerm = fixedTrackGapPenalty({
+      netPrincipalBalance: 500000,
+      currentRate: 0.05,
+      boiAverageRate: 0.04,
+      remainingMonths: 120,
+    });
+    expect(longTerm).toBeGreaterThan(shortTerm);
+  });
+
+  it("uses the current rate as the discount rate by default", () => {
+    const defaultDiscount = fixedTrackGapPenalty({
+      netPrincipalBalance: 500000,
+      currentRate: 0.05,
+      boiAverageRate: 0.04,
+      remainingMonths: 120,
+    });
+    const explicitDiscount = fixedTrackGapPenalty({
+      netPrincipalBalance: 500000,
+      currentRate: 0.05,
+      boiAverageRate: 0.04,
+      remainingMonths: 120,
+      discountRate: 0.05,
+    });
+    expect(defaultDiscount).toBeCloseTo(explicitDiscount, 5);
+  });
+});
+
 
 
 

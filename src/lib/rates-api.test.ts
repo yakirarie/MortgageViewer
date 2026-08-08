@@ -8,8 +8,10 @@ import {
   getPrimeBaseRateAt,
   primeEffectiveRate,
   populatePrimeRateHistory,
+  getBoiAverageRate,
   BOI_BASE_RATE_HISTORY,
 } from "./rates-api";
+
 
 
 describe("getMarketRates", () => {
@@ -302,3 +304,42 @@ describe("formatLastUpdated", () => {
     expect(formatted).toMatch(/\d{1,2}\/\d{1,2}\/\d{4}/);
   });
 });
+
+describe("getBoiAverageRate", () => {
+  it("returns the current base rate for a missing or invalid fromDate", () => {
+    expect(getBoiAverageRate("")).toBe(getCurrentBaseRate());
+    expect(getBoiAverageRate("not-a-date")).toBe(getCurrentBaseRate());
+  });
+
+  it("returns the current base rate when toDate is before fromDate", () => {
+    expect(getBoiAverageRate("2026-07-09", "2026-01-01")).toBe(getCurrentBaseRate());
+  });
+
+  it("returns the exact rate when the range spans a single constant-rate period", () => {
+    // 2026-07-09 onward is a single 3.5% period (the latest entry).
+    const avg = getBoiAverageRate("2026-07-09", "2026-07-20");
+    expect(avg).toBeCloseTo(0.035, 5);
+  });
+
+  it("weights by duration across multiple rate periods", () => {
+    // From 2026-05-28 (3.75%) to 2026-07-09 (3.5%).
+    // 2026-05-28 → 2026-07-09 is 42 days at 3.75%.
+    // 2026-07-09 → 2026-07-20 is 11 days at 3.5%.
+    const avg = getBoiAverageRate("2026-05-28", "2026-07-20");
+    // Weighted: (42 * 0.0375 + 11 * 0.035) / 53
+    const expected = (42 * 0.0375 + 11 * 0.035) / 53;
+    expect(avg).toBeCloseTo(expected, 5);
+  });
+
+  it("returns a value between the min and max base rates in the range", () => {
+    const avg = getBoiAverageRate("2022-01-01", "2026-07-09");
+    expect(avg).toBeGreaterThanOrEqual(0.001);
+    expect(avg).toBeLessThanOrEqual(0.0475);
+  });
+
+  it("defaults toDate to today", () => {
+    const avg = getBoiAverageRate("2026-07-09");
+    expect(avg).toBeCloseTo(0.035, 5);
+  });
+});
+
