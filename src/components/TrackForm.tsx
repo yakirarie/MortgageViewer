@@ -5,7 +5,8 @@ import { formatCurrency, formatPercent, parseCurrencyInput, parsePercentInput } 
 
 import { shouldShowResetWindow, getDefaultCpiLinked, getDefaultRate } from '../lib/validation';
 import { TRACK_TYPES } from '../lib/validation';
-import { populatePrimeRateHistory, getPrimeBaseRateAt, primeEffectiveRate } from '../lib/rates-api';
+import { populatePrimeRateHistory, getPrimeBaseRateAt, primeEffectiveRate, getMarketRates } from '../lib/rates-api';
+
 import { simulatePrimeAmortization, monthsBetween } from '../lib/mortgage-math';
 
 
@@ -15,10 +16,10 @@ interface TrackFormProps {
   track: Track;
   onUpdate: (updates: Partial<Track>) => void;
   getFieldError: (field: string) => string | undefined;
-  primeRate?: number;
 }
 
-export function TrackForm({ track, onUpdate, getFieldError, primeRate = 0.06 }: TrackFormProps) {
+export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
+
 
   const handleCurrencyBlur = (field: keyof Track, value: string) => {
     const parsed = parseCurrencyInput(value);
@@ -33,12 +34,13 @@ export function TrackForm({ track, onUpdate, getFieldError, primeRate = 0.06 }: 
   const handleTypeChange = (newType: string) => {
     const updates: Partial<Track> = {
       track_type: newType as any,
-      annual_interest_rate: getDefaultRate(newType as any, primeRate),
+      annual_interest_rate: getDefaultRate(newType as any, getMarketRates().prime_rate_current),
       is_cpi_linked: getDefaultCpiLinked(newType as any),
       months_to_reset: shouldShowResetWindow(newType as any) ? 60 : null,
     };
     onUpdate(updates);
   };
+
 
   const showResetWindow = shouldShowResetWindow(track.track_type);
   const isPrime = track.track_type === 'PRIME';

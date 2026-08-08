@@ -24,16 +24,8 @@ describe("createDemoProfile", () => {
     expect(profile.created_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
   });
 
-  it("creates a profile with correct global assumptions", () => {
-    const profile = createDemoProfile();
-    expect(profile.global_assumptions).toEqual({
-      reference_market_rate: 0.043,
-      alternative_investment_annual_return: 0.08,
-      prime_rate_current: 0.06,
-    });
-  });
-
   it("creates 4 tracks", () => {
+
     const profile = createDemoProfile();
     expect(profile.tracks).toHaveLength(4);
   });
@@ -142,16 +134,8 @@ describe("createEmptyProfile", () => {
     expect(profile.created_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
   });
 
-  it("creates a profile with correct global assumptions", () => {
-    const profile = createEmptyProfile();
-    expect(profile.global_assumptions).toEqual({
-      reference_market_rate: 0.043,
-      alternative_investment_annual_return: 0.08,
-      prime_rate_current: 0.06,
-    });
-  });
-
   it("creates a profile with empty tracks array", () => {
+
     const profile = createEmptyProfile();
     expect(profile.tracks).toEqual([]);
   });

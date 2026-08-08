@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import type { Profile, GlobalAssumptions, Track } from '../lib/types';
+import type { Profile, Track } from '../lib/types';
+
 import { TrackCard } from './TrackCard';
 import { uploadJson, downloadJson } from '../lib/utils';
 import { validateProfile } from '../lib/validation';
@@ -32,12 +33,8 @@ export function ProfileSettings({ profile: initialProfile, onApplyChanges, onClo
     setHasUnsavedChanges(true);
   };
 
-  const handleGlobalAssumptionsChange = (assumptions: GlobalAssumptions) => {
-    setLocalProfile(prev => ({ ...prev, global_assumptions: assumptions }));
-    setHasUnsavedChanges(true);
-  };
-
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+
     const file = e.target.files?.[0];
     if (file) {
       setImportStatus('loading');
@@ -269,9 +266,10 @@ export function ProfileSettings({ profile: initialProfile, onApplyChanges, onClo
 
   const canAddTrack = localProfile.tracks.length < 8;
 
-  const { profile_name, global_assumptions } = localProfile;
+  const { profile_name } = localProfile;
 
   return (
+
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-bg-surface rounded-lg max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
@@ -307,67 +305,8 @@ export function ProfileSettings({ profile: initialProfile, onApplyChanges, onClo
             />
           </div>
 
-          {/* Global Assumptions */}
-          <div>
-            <h3 className="text-lg font-semibold text-text-primary mb-4">Global Assumptions</h3>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm text-text-secondary mb-1">
-                  Reference Market Rate
-                </label>
-                <input
-                  type="text"
-                  value={`${(global_assumptions.reference_market_rate * 100).toFixed(2)}%`}
-                  onChange={(e) => {
-                    const value = parseFloat(e.target.value.replace('%', '')) / 100;
-                    handleGlobalAssumptionsChange({
-                      ...global_assumptions,
-                      reference_market_rate: value,
-                    });
-                  }}
-                  className="w-full bg-bg-surface-raised border border-border-subtle rounded px-3 py-2 text-text-primary font-mono focus:outline-none focus:border-accent-info"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-text-secondary mb-1">
-                  Alternative Investment Return
-                </label>
-                <input
-                  type="text"
-                  value={`${(global_assumptions.alternative_investment_annual_return * 100).toFixed(2)}%`}
-                  onChange={(e) => {
-                    const value = parseFloat(e.target.value.replace('%', '')) / 100;
-                    handleGlobalAssumptionsChange({
-                      ...global_assumptions,
-                      alternative_investment_annual_return: value,
-                    });
-                  }}
-                  className="w-full bg-bg-surface-raised border border-border-subtle rounded px-3 py-2 text-text-primary font-mono focus:outline-none focus:border-accent-info"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-text-secondary mb-1">
-                  Prime Rate Current
-                </label>
-                <input
-                  type="text"
-                  value={`${(global_assumptions.prime_rate_current * 100).toFixed(2)}%`}
-                  onChange={(e) => {
-                    const value = parseFloat(e.target.value.replace('%', '')) / 100;
-                    handleGlobalAssumptionsChange({
-                      ...global_assumptions,
-                      prime_rate_current: value,
-                    });
-                  }}
-                  className="w-full bg-bg-surface-raised border border-border-subtle rounded px-3 py-2 text-text-primary font-mono focus:outline-none focus:border-accent-info"
-                />
-              </div>
-            </div>
-          </div>
-
           {/* Tracks Section */}
+
           <div>
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold text-text-primary">Mortgage Tracks</h3>
@@ -403,8 +342,8 @@ export function ProfileSettings({ profile: initialProfile, onApplyChanges, onClo
                     canMoveUp={index > 0}
                     canMoveDown={index < localProfile.tracks.length - 1}
                     getFieldError={(field) => getFieldError(track.track_id, field)}
-                    primeRate={localProfile.global_assumptions.prime_rate_current}
                   />
+
                 ))
               )}
             </div>
@@ -466,8 +405,8 @@ export function ProfileSettings({ profile: initialProfile, onApplyChanges, onClo
           {importStatus === 'idle' && !importMessage && (
             <div className="text-text-secondary text-xs space-y-1">
               <p>💡 <strong>Profile Name:</strong> A friendly name for your mortgage portfolio.</p>
-              <p>📊 <strong>Global Assumptions:</strong> Market rates used for calculations across all tracks.</p>
               <p>🏠 <strong>Tracks:</strong> Add, edit, or remove mortgage tracks directly here.</p>
+
               <p>💾 <strong>Download:</strong> Save your complete profile as a JSON file for backup.</p>
               <p>📁 <strong>Upload:</strong> Load a previously saved profile from a JSON file.</p>
             </div>

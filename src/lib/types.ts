@@ -54,19 +54,13 @@ export interface Track {
 
 
 
-export interface GlobalAssumptions {
-  reference_market_rate: number; // decimal
-  alternative_investment_annual_return: number; // decimal
-  prime_rate_current: number; // decimal
-}
-
 export interface Profile {
   schema_version: number;
   profile_name: string;
   created_at: string;
-  global_assumptions: GlobalAssumptions;
   tracks: Track[];
 }
+
 
 export type PayoffReductionMode = "reduce_term" | "reduce_payment";
 

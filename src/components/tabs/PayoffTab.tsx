@@ -8,6 +8,8 @@ import {
   type PayoffReductionMode,
 } from '../../lib/mortgage-math';
 import { formatCurrency } from '../../lib/utils';
+import { getMarketRates } from '../../lib/rates-api';
+
 
 interface PayoffTabProps {
   t: any;
@@ -74,7 +76,8 @@ export function PayoffTab({ t, profile }: PayoffTabProps) {
 
   // Investment comparison
   const maxTerm = Math.max(...profile.tracks.map(t => t.remaining_term_months));
-  const investmentGain = investmentNetGain(lumpSum, profile.global_assumptions.alternative_investment_annual_return, maxTerm);
+  const investmentGain = investmentNetGain(lumpSum, getMarketRates().alternative_investment_annual_return, maxTerm);
+
   const comparison = comparePayoffVsInvest(totalNpb, investmentGain, lumpSum);
 
   const getVerdictText = () => {

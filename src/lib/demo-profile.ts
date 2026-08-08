@@ -79,11 +79,6 @@ export function createDemoProfile(): Profile {
     schema_version: 1,
     profile_name: 'Demo Profile',
     created_at: now,
-    global_assumptions: {
-      reference_market_rate: 0.043,
-      alternative_investment_annual_return: 0.08,
-      prime_rate_current: 0.06,
-    },
     tracks,
   };
 }
@@ -95,14 +90,10 @@ export function createEmptyProfile(): Profile {
     schema_version: 1,
     profile_name: 'My Mashkanta',
     created_at: now,
-    global_assumptions: {
-      reference_market_rate: 0.043,
-      alternative_investment_annual_return: 0.08,
-      prime_rate_current: 0.06,
-    },
     tracks: [],
   };
 }
+
 
 export function createDefaultTrack(trackType: string = 'PRIME'): Track {
   return {

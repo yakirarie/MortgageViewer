@@ -1,6 +1,7 @@
 // Validation utilities for Profile and Track data per PRD §2.2
 
-import type { Track, Profile, TrackType, GlobalAssumptions } from './types';
+import type { Track, Profile, TrackType } from './types';
+
 
 export interface ValidationError {
   field: string;
@@ -107,28 +108,8 @@ export function validateTrack(track: Track): ValidationResult {
   };
 }
 
-export function validateGlobalAssumptions(assumptions: GlobalAssumptions): ValidationResult {
-  const errors: ValidationError[] = [];
-
-  if (assumptions.reference_market_rate < 0 || assumptions.reference_market_rate > 0.15) {
-    errors.push({ field: 'reference_market_rate', message: 'Reference market rate must be between 0% and 15%' });
-  }
-
-  if (assumptions.alternative_investment_annual_return < 0 || assumptions.alternative_investment_annual_return > 0.30) {
-    errors.push({ field: 'alternative_investment_annual_return', message: 'Alternative investment return must be between 0% and 30%' });
-  }
-
-  if (assumptions.prime_rate_current < 0 || assumptions.prime_rate_current > 0.15) {
-    errors.push({ field: 'prime_rate_current', message: 'Prime rate must be between 0% and 15%' });
-  }
-
-  return {
-    isValid: errors.length === 0,
-    errors,
-  };
-}
-
 export function validateProfile(profile: Profile): ValidationResult {
+
   const errors: ValidationError[] = [];
 
   // Schema version
@@ -146,11 +127,8 @@ export function validateProfile(profile: Profile): ValidationResult {
     errors.push({ field: 'created_at', message: 'Created at timestamp is required' });
   }
 
-  // Global assumptions
-  const assumptionsResult = validateGlobalAssumptions(profile.global_assumptions);
-  errors.push(...assumptionsResult.errors);
-
   // Tracks
+
   if (!Array.isArray(profile.tracks)) {
     errors.push({ field: 'tracks', message: 'Tracks must be an array' });
   } else {

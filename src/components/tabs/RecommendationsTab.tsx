@@ -5,6 +5,8 @@ import {
   weightedAverageRate,
 } from '../../lib/mortgage-math';
 import { formatCurrency, formatPercent } from '../../lib/utils';
+import { getMarketRates } from '../../lib/rates-api';
+
 
 interface RecommendationsTabProps {
   t: any;
@@ -15,8 +17,9 @@ export function RecommendationsTab({ t, profile }: RecommendationsTabProps) {
 
   const recommendations = recommendActionsForPortfolio(
     profile.tracks,
-    profile.global_assumptions.reference_market_rate
+    getMarketRates().reference_market_rate
   );
+
 
   const rankedTracks = rankTracksByPriority(profile.tracks);
   const weightedRate = weightedAverageRate(profile.tracks);
@@ -218,7 +221,8 @@ export function RecommendationsTab({ t, profile }: RecommendationsTabProps) {
           </div>
         </div>
         <div className="mt-4 pt-4 border-t border-border-subtle text-xs text-text-secondary">
-          {t.recommendations.weightedRate} {formatPercent(weightedRate)} | {t.recommendations.marketReference} {formatPercent(profile.global_assumptions.reference_market_rate)}
+          {t.recommendations.weightedRate} {formatPercent(weightedRate)} | {t.recommendations.marketReference} {formatPercent(getMarketRates().reference_market_rate)}
+
         </div>
       </div>
     </div>

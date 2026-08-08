@@ -13,7 +13,6 @@ interface TrackCardProps {
   canMoveUp: boolean;
   canMoveDown: boolean;
   getFieldError: (field: string) => string | undefined;
-  primeRate?: number;
 }
 
 export function TrackCard({
@@ -26,8 +25,8 @@ export function TrackCard({
   canMoveUp,
   canMoveDown,
   getFieldError,
-  primeRate,
 }: TrackCardProps) {
+
   const [isExpanded, setIsExpanded] = useState(false);
 
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -170,8 +169,8 @@ export function TrackCard({
             track={track}
             onUpdate={onUpdate}
             getFieldError={getFieldError}
-            primeRate={primeRate}
           />
+
 
         </div>
       )}

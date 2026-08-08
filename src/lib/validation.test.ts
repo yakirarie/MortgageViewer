@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import type { Track, Profile, TrackType } from "./types";
 import {
   validateTrack,
-  validateGlobalAssumptions,
   validateProfile,
   getTrackTypeDefaults,
   shouldShowResetWindow,
@@ -10,6 +9,7 @@ import {
   getDefaultRate,
   TRACK_TYPES,
 } from "./validation";
+
 
 function makeTrack(overrides: Partial<Track> = {}): Track {
   return {
@@ -34,15 +34,11 @@ function makeProfile(overrides: Partial<Profile> = {}): Profile {
     schema_version: 1,
     profile_name: "Test Profile",
     created_at: "2024-01-01T00:00:00.000Z",
-    global_assumptions: {
-      reference_market_rate: 0.043,
-      alternative_investment_annual_return: 0.08,
-      prime_rate_current: 0.06,
-    },
     tracks: [],
     ...overrides,
   };
 }
+
 
 describe("validateTrack", () => {
   it("validates a correct track", () => {
@@ -258,104 +254,8 @@ describe("validateTrack", () => {
   });
 });
 
-describe("validateGlobalAssumptions", () => {
-  it("validates correct global assumptions", () => {
-    const assumptions = {
-      reference_market_rate: 0.043,
-      alternative_investment_annual_return: 0.08,
-      prime_rate_current: 0.06,
-    };
-    const result = validateGlobalAssumptions(assumptions);
-    expect(result.isValid).toBe(true);
-    expect(result.errors).toEqual([]);
-  });
-
-  it("rejects reference_market_rate below 0%", () => {
-    const assumptions = {
-      reference_market_rate: -0.01,
-      alternative_investment_annual_return: 0.08,
-      prime_rate_current: 0.06,
-    };
-    const result = validateGlobalAssumptions(assumptions);
-    expect(result.isValid).toBe(false);
-    expect(result.errors).toContainEqual({
-      field: "reference_market_rate",
-      message: "Reference market rate must be between 0% and 15%",
-    });
-  });
-
-  it("rejects reference_market_rate above 15%", () => {
-    const assumptions = {
-      reference_market_rate: 0.16,
-      alternative_investment_annual_return: 0.08,
-      prime_rate_current: 0.06,
-    };
-    const result = validateGlobalAssumptions(assumptions);
-    expect(result.isValid).toBe(false);
-    expect(result.errors).toContainEqual({
-      field: "reference_market_rate",
-      message: "Reference market rate must be between 0% and 15%",
-    });
-  });
-
-  it("rejects alternative_investment_annual_return below 0%", () => {
-    const assumptions = {
-      reference_market_rate: 0.043,
-      alternative_investment_annual_return: -0.01,
-      prime_rate_current: 0.06,
-    };
-    const result = validateGlobalAssumptions(assumptions);
-    expect(result.isValid).toBe(false);
-    expect(result.errors).toContainEqual({
-      field: "alternative_investment_annual_return",
-      message: "Alternative investment return must be between 0% and 30%",
-    });
-  });
-
-  it("rejects alternative_investment_annual_return above 30%", () => {
-    const assumptions = {
-      reference_market_rate: 0.043,
-      alternative_investment_annual_return: 0.31,
-      prime_rate_current: 0.06,
-    };
-    const result = validateGlobalAssumptions(assumptions);
-    expect(result.isValid).toBe(false);
-    expect(result.errors).toContainEqual({
-      field: "alternative_investment_annual_return",
-      message: "Alternative investment return must be between 0% and 30%",
-    });
-  });
-
-  it("rejects prime_rate_current below 0%", () => {
-    const assumptions = {
-      reference_market_rate: 0.043,
-      alternative_investment_annual_return: 0.08,
-      prime_rate_current: -0.01,
-    };
-    const result = validateGlobalAssumptions(assumptions);
-    expect(result.isValid).toBe(false);
-    expect(result.errors).toContainEqual({
-      field: "prime_rate_current",
-      message: "Prime rate must be between 0% and 15%",
-    });
-  });
-
-  it("rejects prime_rate_current above 15%", () => {
-    const assumptions = {
-      reference_market_rate: 0.043,
-      alternative_investment_annual_return: 0.08,
-      prime_rate_current: 0.16,
-    };
-    const result = validateGlobalAssumptions(assumptions);
-    expect(result.isValid).toBe(false);
-    expect(result.errors).toContainEqual({
-      field: "prime_rate_current",
-      message: "Prime rate must be between 0% and 15%",
-    });
-  });
-});
-
 describe("validateProfile", () => {
+
   it("validates a correct profile", () => {
     const profile = makeProfile({
       tracks: [makeTrack()],
@@ -401,23 +301,8 @@ describe("validateProfile", () => {
     });
   });
 
-  it("validates global_assumptions", () => {
-    const profile = makeProfile({
-      global_assumptions: {
-        reference_market_rate: 0.16,
-        alternative_investment_annual_return: 0.08,
-        prime_rate_current: 0.06,
-      },
-    });
-    const result = validateProfile(profile);
-    expect(result.isValid).toBe(false);
-    expect(result.errors).toContainEqual({
-      field: "reference_market_rate",
-      message: "Reference market rate must be between 0% and 15%",
-    });
-  });
-
   it("rejects tracks that is not an array", () => {
+
     const profile = makeProfile({ tracks: null as any });
     const result = validateProfile(profile);
     expect(result.isValid).toBe(false);
