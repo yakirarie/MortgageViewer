@@ -5,7 +5,8 @@ import {
   createDefaultTrack,
   duplicateTrack,
 } from "./demo-profile";
-import type { Profile, Track } from "./types";
+import type { Track } from "./types";
+
 
 describe("createDemoProfile", () => {
   it("creates a profile with schema_version 1", () => {

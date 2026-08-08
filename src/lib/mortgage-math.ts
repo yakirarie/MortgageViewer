@@ -10,13 +10,287 @@ import type {
   Track,
   PayoffReductionMode,
   TrackRecommendation,
+  RateHistoryEntry,
 } from "./types";
+
+
 
 export type { PayoffReductionMode };
 
 // ---------------------------------------------------------------------------
+// §4.1a Prime Rate History helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * The effective annual rate currently in effect for a track. For Prime tracks
+ * with a populated `rate_history`, this is the latest entry's rate; otherwise
+ * it falls back to the track's `annual_interest_rate`.
+ */
+export function currentEffectiveRate(track: Track): number {
+  const history = track.rate_history;
+  if (history && history.length > 0) {
+    return history[history.length - 1].annual_interest_rate;
+  }
+  return track.annual_interest_rate;
+}
+
+/**
+ * The effective annual rate in effect at a given month offset from the track's
+ * start date. Month 0 is the first month of the loan. For Prime tracks with a
+ * `rate_history`, the rate is looked up by walking the timeline; otherwise it
+ * falls back to `annual_interest_rate`.
+ *
+ * Returns `annual_interest_rate` when the track has no start date or history.
+ */
+export function effectiveRateForMonth(track: Track, monthIndex: number): number {
+  const history = track.rate_history;
+  if (!history || history.length === 0 || !track.start_date) {
+    return track.annual_interest_rate;
+  }
+
+  const start = new Date(track.start_date).getTime();
+  if (isNaN(start)) return track.annual_interest_rate;
+
+  const target = new Date(start);
+  target.setMonth(target.getMonth() + monthIndex);
+  const targetTime = target.getTime();
+
+  // Find the latest history entry whose effective_date is <= target month.
+  let effective = history[0].annual_interest_rate;
+  for (const entry of history) {
+    const entryTime = new Date(entry.effective_date).getTime();
+    if (entryTime <= targetTime) {
+      effective = entry.annual_interest_rate;
+    } else {
+      break;
+    }
+  }
+  return effective;
+}
+
+/**
+ * Spitzer (French/annuity) monthly repayment using a track's historical rate
+ * timeline. The payment is recomputed at each BoI rate change so the amortization
+ * reflects the Prime track's actual rate history. Falls back to the single-rate
+ * `spitzerMonthlyPayment` when the track has no history.
+ */
+export function spitzerMonthlyPaymentWithHistory(track: Track): number {
+  const history = track.rate_history;
+  if (!history || history.length === 0 || !track.start_date) {
+    return spitzerMonthlyPayment(
+      track.principal_balance,
+      track.annual_interest_rate,
+      track.remaining_term_months
+    );
+  }
+
+  const start = new Date(track.start_date).getTime();
+  if (isNaN(start)) {
+    return spitzerMonthlyPayment(
+      track.principal_balance,
+      track.annual_interest_rate,
+      track.remaining_term_months
+    );
+  }
+
+  // Walk the timeline month by month, recomputing the payment whenever the
+  // effective rate changes, and amortizing the balance forward.
+  let balance = track.principal_balance;
+  let monthsLeft = track.remaining_term_months;
+  let currentRate = effectiveRateForMonth(track, 0);
+  let currentPayment = spitzerMonthlyPayment(balance, currentRate, monthsLeft);
+
+  for (let m = 0; m < track.remaining_term_months; m++) {
+    const rateThisMonth = effectiveRateForMonth(track, m);
+    if (rateThisMonth !== currentRate) {
+      currentRate = rateThisMonth;
+      currentPayment = spitzerMonthlyPayment(balance, currentRate, monthsLeft);
+    }
+    const r = currentRate / 12;
+    const interest = balance * r;
+    const principal = currentPayment - interest;
+    balance = Math.max(0, balance - principal);
+    monthsLeft -= 1;
+    if (balance <= 0) break;
+  }
+
+  return currentPayment;
+}
+
+/**
+ * The effective annual rate in effect at a given month offset from a start date,
+ * given a raw rate-history timeline. Month 0 is the first month of the loan.
+ * Returns the latest history entry whose effective_date is <= the target month.
+ * Falls back to the first entry's rate when no entry applies yet.
+ */
+export function rateForMonth(
+  rateHistory: RateHistoryEntry[],
+  startDate: string,
+  monthIndex: number
+): number {
+  if (!rateHistory || rateHistory.length === 0 || !startDate) return 0;
+  const start = new Date(startDate).getTime();
+  if (isNaN(start)) return rateHistory[0].annual_interest_rate;
+
+  const target = new Date(start);
+  target.setMonth(target.getMonth() + monthIndex);
+  const targetTime = target.getTime();
+
+  let effective = rateHistory[0].annual_interest_rate;
+  for (const entry of rateHistory) {
+    const entryTime = new Date(entry.effective_date).getTime();
+    if (entryTime <= targetTime) {
+      effective = entry.annual_interest_rate;
+    } else {
+      break;
+    }
+  }
+  return effective;
+}
+
+/** Whole months between two dates (rounded down). */
+export function monthsBetween(from: Date, to: Date): number {
+  let months = (to.getFullYear() - from.getFullYear()) * 12;
+  months += to.getMonth() - from.getMonth();
+  if (to.getDate() < from.getDate()) months -= 1;
+  return Math.max(0, months);
+}
+
+
+
+export interface PrimeAmortizationResult {
+  /**
+   * Total payoff balance today = net principal balance + accrued daily interest
+   * since the last payment date. This is the figure a bank quotes as the
+   * "current balance" / payoff amount.
+   */
+  currentBalance: number;
+  /** Net principal balance today (before accrued daily interest). */
+  netPrincipalBalance: number;
+  /** Accrued daily interest since the last payment date (ריבית צבורה). */
+  accruedInterest: number;
+  /** The monthly payment currently in effect (recomputed at each rate change). */
+  currentMonthlyPayment: number;
+  /** Months remaining on the loan today. */
+  remainingTermMonths: number;
+  /** Number of months elapsed since the start date (clamped to the term). */
+  monthsElapsed: number;
+}
+
+
+/**
+ * Simulate a Prime track's amortization from its start date to today, applying
+ * the historical rate timeline. The monthly payment is recomputed via the Spitzer
+ * formula whenever the effective rate changes, so the result reflects the actual
+ * rate history. Returns the current balance, current payment, and remaining term.
+ *
+ * Falls back to the original principal / original term when there is no start
+ * date or rate history (nothing to simulate).
+ */
+export function simulatePrimeAmortization(
+  originalPrincipal: number,
+  startDate: string,
+  originalTermMonths: number,
+  rateHistory: RateHistoryEntry[],
+  firstPayoutDate?: string
+): PrimeAmortizationResult {
+  if (!startDate || originalTermMonths <= 0) {
+    return {
+      currentBalance: originalPrincipal,
+      netPrincipalBalance: originalPrincipal,
+      accruedInterest: 0,
+      currentMonthlyPayment: 0,
+      remainingTermMonths: originalTermMonths,
+      monthsElapsed: 0,
+    };
+  }
+
+  const start = new Date(startDate).getTime();
+  if (isNaN(start) || !rateHistory || rateHistory.length === 0) {
+    return {
+      currentBalance: originalPrincipal,
+      netPrincipalBalance: originalPrincipal,
+      accruedInterest: 0,
+      currentMonthlyPayment: 0,
+      remainingTermMonths: originalTermMonths,
+      monthsElapsed: 0,
+    };
+  }
+
+  // The amortization clock starts at the loan's start date. The bank counts the
+  // number of full months since the loan was taken out (e.g. 34/360 for a loan
+  // started 13.09.2023), which is what determines how many payments have been
+  // made and the remaining term. The first payout date is *not* used to shift
+  // this count — it only determines the monthly payment day-of-month, which is
+  // used to compute accrued daily interest since the last payment.
+  const elapsed = Math.min(monthsBetween(new Date(startDate), new Date()), originalTermMonths);
+
+  // Amortize the net principal forward, recomputing the Spitzer payment at each
+  // BoI rate change.
+  let netPrincipal = originalPrincipal;
+  let monthsLeft = originalTermMonths;
+  let currentRate = rateForMonth(rateHistory, startDate, 0);
+  let currentPayment = spitzerMonthlyPayment(netPrincipal, currentRate, monthsLeft);
+
+  for (let m = 0; m < elapsed; m++) {
+    const rateThisMonth = rateForMonth(rateHistory, startDate, m);
+    if (rateThisMonth !== currentRate) {
+      currentRate = rateThisMonth;
+      currentPayment = spitzerMonthlyPayment(netPrincipal, currentRate, monthsLeft);
+    }
+    const r = currentRate / 12;
+    const interest = netPrincipal * r;
+    const principal = currentPayment - interest;
+    netPrincipal = Math.max(0, netPrincipal - principal);
+    monthsLeft -= 1;
+    if (netPrincipal <= 0) break;
+  }
+
+  // The payment currently in effect is computed at the *latest* rate in the
+  // history (the rate in effect today), over the remaining term at the current
+  // net principal. The amortization loop above may stop at the last full elapsed
+  // month, which can predate the most recent BoI rate change within the current
+  // month — so recompute the payment at the latest rate to reflect today.
+  const latestRate = rateHistory[rateHistory.length - 1].annual_interest_rate;
+  const currentMonthlyPayment =
+    netPrincipal > 0 && monthsLeft > 0
+      ? spitzerMonthlyPayment(netPrincipal, latestRate, monthsLeft)
+      : currentPayment;
+
+  // Accrued daily interest (ריבית צבורה) since the last payment date. The last
+  // payment is due on the monthly payment day-of-month (from the first payout
+  // date, falling back to the start date) in the most recent month. The bank
+  // accrues interest daily at R/365 from the last payment date to today.
+  const paymentDay = firstPayoutDate
+    ? new Date(firstPayoutDate).getDate()
+    : new Date(startDate).getDate();
+  const today = new Date();
+  const lastPaymentDate = new Date(today.getFullYear(), today.getMonth(), paymentDay);
+  if (lastPaymentDate.getTime() > today.getTime()) {
+    // Today is before this month's payment day → last payment was last month.
+    lastPaymentDate.setMonth(lastPaymentDate.getMonth() - 1);
+  }
+  const accruedDays = Math.max(0, (today.getTime() - lastPaymentDate.getTime()) / 86400000);
+  const accruedInterest =
+    netPrincipal > 0 ? netPrincipal * (latestRate / 365) * accruedDays : 0;
+
+  return {
+    currentBalance: netPrincipal + accruedInterest,
+    netPrincipalBalance: netPrincipal,
+    accruedInterest,
+    currentMonthlyPayment,
+    remainingTermMonths: monthsLeft,
+    monthsElapsed: elapsed,
+  };
+}
+
+
+
+
+// ---------------------------------------------------------------------------
 // §4.1 Core Portfolio Math
 // ---------------------------------------------------------------------------
+
 
 /** Weighted average interest rate across tracks. Returns 0 for an empty/zero-balance portfolio. */
 export function weightedAverageRate(tracks: Track[]): number {

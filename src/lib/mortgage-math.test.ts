@@ -16,7 +16,13 @@ import {
   refinancingBreakeven,
   recommendActionForTrack,
   rankTracksByPriority,
+  currentEffectiveRate,
+  effectiveRateForMonth,
+  spitzerMonthlyPaymentWithHistory,
+  simulatePrimeAmortization,
 } from "./mortgage-math";
+
+
 
 // ---------------------------------------------------------------------------
 // Fixture: the demo profile from PRD §2.3.2
@@ -410,3 +416,266 @@ describe("rankTracksByPriority", () => {
     expect(ranked[1].track_id).toBe("bad");
   });
 });
+
+// ---------------------------------------------------------------------------
+// §4.1a Prime Rate History
+// ---------------------------------------------------------------------------
+
+describe("currentEffectiveRate", () => {
+  it("returns the latest rate_history entry for a Prime track", () => {
+    const track = makeTrack({
+      track_type: "PRIME",
+      annual_interest_rate: 0.05,
+      rate_history: [
+        { effective_date: "2023-01-05", annual_interest_rate: 0.039 },
+        { effective_date: "2023-02-23", annual_interest_rate: 0.044 },
+      ],
+    });
+    expect(currentEffectiveRate(track)).toBeCloseTo(0.044);
+  });
+
+  it("falls back to annual_interest_rate when there is no history", () => {
+    const track = makeTrack({ annual_interest_rate: 0.05 });
+    expect(currentEffectiveRate(track)).toBeCloseTo(0.05);
+  });
+});
+
+describe("effectiveRateForMonth", () => {
+  const track = makeTrack({
+    track_type: "PRIME",
+    start_date: "2023-01-05",
+    annual_interest_rate: 0.05,
+    rate_history: [
+      { effective_date: "2023-01-05", annual_interest_rate: 0.039 },
+      { effective_date: "2023-02-23", annual_interest_rate: 0.044 },
+      { effective_date: "2023-05-25", annual_interest_rate: 0.049 },
+    ],
+  });
+
+  it("returns the rate in effect at month 0", () => {
+    expect(effectiveRateForMonth(track, 0)).toBeCloseTo(0.039);
+  });
+
+  it("returns the updated rate after a BoI change", () => {
+    // Month 2 lands in Feb 2023 → 4.4%
+    expect(effectiveRateForMonth(track, 2)).toBeCloseTo(0.044);
+    // Month 5 lands in Jun 2023 → 4.9%
+    expect(effectiveRateForMonth(track, 5)).toBeCloseTo(0.049);
+  });
+
+  it("falls back to annual_interest_rate when there is no history or start date", () => {
+    const noHistory = makeTrack({ annual_interest_rate: 0.05 });
+    expect(effectiveRateForMonth(noHistory, 3)).toBeCloseTo(0.05);
+  });
+});
+
+describe("spitzerMonthlyPaymentWithHistory", () => {
+  it("falls back to the single-rate payment when there is no history", () => {
+    const track = makeTrack({
+      principal_balance: 480000,
+      annual_interest_rate: 0.055,
+      remaining_term_months: 220,
+    });
+    expect(spitzerMonthlyPaymentWithHistory(track)).toBeCloseTo(
+      spitzerMonthlyPayment(480000, 0.055, 220),
+      5
+    );
+  });
+
+  it("produces a payment that amortizes the balance over the term", () => {
+    // A Prime track whose rate history is constant at 5.5% should produce the
+    // same payment as the single-rate Spitzer formula.
+    const track = makeTrack({
+      track_type: "PRIME",
+      start_date: "2023-01-05",
+      principal_balance: 480000,
+      annual_interest_rate: 0.055,
+      remaining_term_months: 220,
+      rate_history: [
+        { effective_date: "2023-01-05", annual_interest_rate: 0.055 },
+        { effective_date: "2023-02-23", annual_interest_rate: 0.055 },
+        { effective_date: "2023-05-25", annual_interest_rate: 0.055 },
+      ],
+    });
+    expect(spitzerMonthlyPaymentWithHistory(track)).toBeCloseTo(
+      spitzerMonthlyPayment(480000, 0.055, 220),
+      1
+    );
+  });
+
+  it("returns a positive payment for a Prime track with a real BoI history", () => {
+    const track = makeTrack({
+      track_type: "PRIME",
+      start_date: "2023-01-05",
+      principal_balance: 480000,
+      annual_interest_rate: 0.039,
+      remaining_term_months: 220,
+      rate_history: [
+        { effective_date: "2023-01-05", annual_interest_rate: 0.039 },
+        { effective_date: "2023-02-23", annual_interest_rate: 0.044 },
+        { effective_date: "2023-05-25", annual_interest_rate: 0.049 },
+        { effective_date: "2023-07-13", annual_interest_rate: 0.049 },
+      ],
+    });
+    const payment = spitzerMonthlyPaymentWithHistory(track);
+    expect(payment).toBeGreaterThan(0);
+    // The payment should be within a reasonable band of the single-rate payment
+    // computed at the current effective rate.
+    const singleRate = spitzerMonthlyPayment(480000, 0.049, 220);
+    expect(payment).toBeGreaterThan(singleRate * 0.9);
+    expect(payment).toBeLessThan(singleRate * 1.1);
+  });
+});
+
+describe("simulatePrimeAmortization", () => {
+  it("falls back to the original principal/term when there is no start date or history", () => {
+    const result = simulatePrimeAmortization(500000, "", 360, []);
+    expect(result.currentBalance).toBe(500000);
+    expect(result.remainingTermMonths).toBe(360);
+    expect(result.monthsElapsed).toBe(0);
+    expect(result.currentMonthlyPayment).toBe(0);
+  });
+
+  it("falls back when the start date is invalid", () => {
+    const result = simulatePrimeAmortization(500000, "not-a-date", 360, [
+      { effective_date: "2023-01-05", annual_interest_rate: 0.05 },
+    ]);
+    expect(result.currentBalance).toBe(500000);
+    expect(result.remainingTermMonths).toBe(360);
+  });
+
+  it("amortizes a constant-rate loan correctly over the elapsed months", () => {
+    // Start 12 months ago at a constant 5% rate, 360-month term.
+    const start = new Date();
+    start.setMonth(start.getMonth() - 12);
+    const startDate = start.toISOString().slice(0, 10);
+
+    const result = simulatePrimeAmortization(500000, startDate, 360, [
+      { effective_date: startDate, annual_interest_rate: 0.05 },
+    ]);
+
+    // 12 months elapsed, 348 remaining.
+    expect(result.monthsElapsed).toBe(12);
+    expect(result.remainingTermMonths).toBe(348);
+
+    // The current balance should be less than the original (principal paid down).
+    expect(result.currentBalance).toBeLessThan(500000);
+    expect(result.currentBalance).toBeGreaterThan(0);
+
+    // The current payment should match the single-rate Spitzer formula at 5%.
+    expect(result.currentMonthlyPayment).toBeCloseTo(
+      spitzerMonthlyPayment(500000, 0.05, 360),
+      1
+    );
+  });
+
+  it("applies rate changes over time (payment recomputed at each change)", () => {
+    // Start 24 months ago. Rate is 4% for the first 12 months, then 6%.
+    const start = new Date();
+    start.setMonth(start.getMonth() - 24);
+    const startDate = start.toISOString().slice(0, 10);
+
+    const rateChangeDate = new Date(start);
+    rateChangeDate.setMonth(rateChangeDate.getMonth() + 12);
+    const rateChangeIso = rateChangeDate.toISOString().slice(0, 10);
+
+    const result = simulatePrimeAmortization(500000, startDate, 360, [
+      { effective_date: startDate, annual_interest_rate: 0.04 },
+      { effective_date: rateChangeIso, annual_interest_rate: 0.06 },
+    ]);
+
+    expect(result.monthsElapsed).toBe(24);
+    expect(result.remainingTermMonths).toBe(336);
+
+    // After the rate rose to 6%, the current payment should be higher than a
+    // pure 4% payment would be.
+    const paymentAt4 = spitzerMonthlyPayment(500000, 0.04, 360);
+    expect(result.currentMonthlyPayment).toBeGreaterThan(paymentAt4);
+  });
+
+  it("clamps elapsed months to the original term", () => {
+    // Start 400 months ago (beyond a 360-month term) — the loan should be fully paid.
+    const start = new Date();
+    start.setMonth(start.getMonth() - 400);
+    const startDate = start.toISOString().slice(0, 10);
+
+    const result = simulatePrimeAmortization(500000, startDate, 360, [
+      { effective_date: startDate, annual_interest_rate: 0.05 },
+    ]);
+
+    expect(result.monthsElapsed).toBe(360);
+    expect(result.remainingTermMonths).toBe(0);
+    expect(result.currentBalance).toBe(0);
+  });
+
+  it("counts elapsed months from the start date regardless of the first payout date", () => {
+    // The bank counts elapsed months from the loan's start date (e.g. 34/360 for
+    // a loan started 13.09.2023). The first payout date does NOT shift this
+    // count — it only determines the monthly payment day-of-month, which affects
+    // the accrued daily interest component of the total payoff balance.
+    const start = new Date();
+    start.setMonth(start.getMonth() - 34);
+    const startDate = start.toISOString().slice(0, 10);
+
+    const payout = new Date(start);
+    payout.setMonth(payout.getMonth() + 1);
+    const payoutDate = payout.toISOString().slice(0, 10);
+
+    const history = [
+      { effective_date: startDate, annual_interest_rate: 0.05 },
+    ];
+
+    const fromSigning = simulatePrimeAmortization(200000, startDate, 360, history);
+    const fromPayout = simulatePrimeAmortization(200000, startDate, 360, history, payoutDate);
+
+    // Elapsed months and remaining term are identical — both counted from the
+    // start date.
+    expect(fromPayout.monthsElapsed).toBe(fromSigning.monthsElapsed);
+    expect(fromPayout.remainingTermMonths).toBe(fromSigning.remainingTermMonths);
+
+    // Net principal is identical too (same amortization schedule).
+    expect(fromPayout.netPrincipalBalance).toBeCloseTo(fromSigning.netPrincipalBalance, 5);
+
+    // The total payoff balance differs only by the accrued daily interest, which
+    // depends on the payment day-of-month derived from the first payout date.
+    expect(fromPayout.accruedInterest).toBeGreaterThanOrEqual(0);
+    expect(fromPayout.currentBalance).toBeGreaterThanOrEqual(fromPayout.netPrincipalBalance);
+  });
+
+
+
+  it("computes the current payment at the latest history rate, not the last elapsed month", () => {
+
+    // Start 34 months ago. The most recent BoI rate change (2026-07-09) falls
+    // *within* the current month, after the last full elapsed month (which lands
+    // in June). The current payment must be recomputed at the latest rate.
+    const start = new Date();
+    start.setMonth(start.getMonth() - 34);
+    const startDate = start.toISOString().slice(0, 10);
+
+    const history = [
+      { effective_date: startDate, annual_interest_rate: 0.0545 },
+      { effective_date: "2026-05-28", annual_interest_rate: 0.0445 },
+      { effective_date: "2026-07-09", annual_interest_rate: 0.042 },
+    ];
+
+    const result = simulatePrimeAmortization(200000, startDate, 360, history);
+
+    // The current payment should be computed at the latest rate (0.042) over the
+    // remaining term at the current *net principal* balance — not at the rate of
+    // the last elapsed month (0.0445). The total payoff balance includes accrued
+    // daily interest, which is not part of the monthly payment base.
+    expect(result.currentMonthlyPayment).toBeCloseTo(
+      spitzerMonthlyPayment(result.netPrincipalBalance, 0.042, result.remainingTermMonths),
+      1
+    );
+    // And it should be lower than a payment computed at the older 0.0445 rate.
+    expect(result.currentMonthlyPayment).toBeLessThan(
+      spitzerMonthlyPayment(result.netPrincipalBalance, 0.0445, result.remainingTermMonths)
+    );
+  });
+
+});
+
+
+

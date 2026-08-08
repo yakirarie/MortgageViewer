@@ -3,7 +3,8 @@ import type { Profile, Track } from '../lib/types';
 import { validateProfile, validateTrack } from '../lib/validation';
 import { createDemoProfile, createEmptyProfile, createDefaultTrack, duplicateTrack } from '../lib/demo-profile';
 import { downloadJson, uploadJson, getCurrentTimestamp } from '../lib/utils';
-import { spitzerMonthlyPayment } from '../lib/mortgage-math';
+import { spitzerMonthlyPayment, spitzerMonthlyPaymentWithHistory } from '../lib/mortgage-math';
+
 
 const STORAGE_KEY = 'mashkanta-profile';
 
@@ -28,18 +29,24 @@ export function useProfile() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
   }, [profile]);
 
-  // Auto-calculate monthly payment when relevant fields change
+  // Auto-calculate monthly payment when relevant fields change.
+  // Prime tracks with a populated rate history use the historical timeline so
+  // the amortization reflects actual BoI base-rate changes over the loan life.
   const autoCalculatePayment = useCallback((track: Track): Track => {
     if (!track.is_payment_manual_override && track.principal_balance > 0 && track.remaining_term_months > 0) {
-      const calculatedPayment = spitzerMonthlyPayment(
-        track.principal_balance,
-        track.annual_interest_rate,
-        track.remaining_term_months
-      );
+      const hasHistory = track.track_type === 'PRIME' && track.rate_history && track.rate_history.length > 0;
+      const calculatedPayment = hasHistory
+        ? spitzerMonthlyPaymentWithHistory(track)
+        : spitzerMonthlyPayment(
+            track.principal_balance,
+            track.annual_interest_rate,
+            track.remaining_term_months
+          );
       return { ...track, monthly_repayment: calculatedPayment };
     }
     return track;
   }, []);
+
 
   // Auto-calculate notice fee when balance changes (0.15% of balance)
   const autoCalculateNoticeFee = useCallback((track: Track): Track => {

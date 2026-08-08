@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import type { Profile, GlobalAssumptions, Track } from '../lib/types';
 import { TrackCard } from './TrackCard';
-import { uploadJson, downloadJson, getCurrentTimestamp } from '../lib/utils';
-import { validateProfile, validateGlobalAssumptions } from '../lib/validation';
-import { spitzerMonthlyPayment } from '../lib/mortgage-math';
+import { uploadJson, downloadJson } from '../lib/utils';
+import { validateProfile } from '../lib/validation';
+
+import { spitzerMonthlyPayment, monthsBetween } from '../lib/mortgage-math';
+
 import { createDemoProfile, createEmptyProfile, createDefaultTrack, duplicateTrack } from '../lib/demo-profile';
 
 interface ProfileSettingsProps {
@@ -51,18 +53,32 @@ export function ProfileSettings({ profile: initialProfile, onApplyChanges, onClo
           throw new Error('Invalid profile format');
         }
         
-        // Auto-calculate payments for imported tracks
+        // Auto-calculate payments for imported tracks, and backfill the original
+        // term when an older profile only stored the remaining term.
         const tracksWithPayments = importedProfile.tracks.map((track) => {
-          if (!track.is_payment_manual_override && track.principal_balance > 0 && track.remaining_term_months > 0) {
-            const calculatedPayment = spitzerMonthlyPayment(
-              track.principal_balance,
-              track.annual_interest_rate,
-              track.remaining_term_months
-            );
-            return { ...track, monthly_repayment: calculatedPayment };
+          let updated = track;
+          if (
+            (!track.original_term_months || track.original_term_months <= 0) &&
+            track.start_date &&
+            track.remaining_term_months > 0
+          ) {
+            updated = {
+              ...updated,
+              original_term_months:
+                track.remaining_term_months + monthsBetween(new Date(track.start_date), new Date()),
+            };
           }
-          return track;
+          if (!updated.is_payment_manual_override && updated.principal_balance > 0 && updated.remaining_term_months > 0) {
+            const calculatedPayment = spitzerMonthlyPayment(
+              updated.principal_balance,
+              updated.annual_interest_rate,
+              updated.remaining_term_months
+            );
+            updated = { ...updated, monthly_repayment: calculatedPayment };
+          }
+          return updated;
         });
+
         
         setLocalProfile({ ...importedProfile, tracks: tracksWithPayments });
         setHasUnsavedChanges(true);
@@ -246,16 +262,10 @@ export function ProfileSettings({ profile: initialProfile, onApplyChanges, onClo
     setHasUnsavedChanges(true);
   };
 
-  const recalculatePayment = (trackId: string) => {
-    updateTrack(trackId, {
-      is_payment_manual_override: false,
-      monthly_repayment: 0, // Will be auto-calculated
-    });
-  };
-
-  const getFieldError = (trackId: string | null, field: string): string | undefined => {
+  const getFieldError = (_trackId: string | null, _field: string): string | undefined => {
     return undefined;
   };
+
 
   const canAddTrack = localProfile.tracks.length < 8;
 
@@ -387,8 +397,8 @@ export function ProfileSettings({ profile: initialProfile, onApplyChanges, onClo
                     onUpdate={(updates) => updateTrack(track.track_id, updates)}
                     onDelete={() => deleteTrack(track.track_id)}
                     onDuplicate={() => duplicateTrackById(track.track_id)}
-                    onRecalculatePayment={() => recalculatePayment(track.track_id)}
                     onMoveUp={() => reorderTracks(index, index - 1)}
+
                     onMoveDown={() => reorderTracks(index, index + 1)}
                     canMoveUp={index > 0}
                     canMoveDown={index < localProfile.tracks.length - 1}

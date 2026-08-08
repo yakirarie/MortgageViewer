@@ -8,7 +8,6 @@ interface TrackCardProps {
   onUpdate: (updates: Partial<Track>) => void;
   onDelete: () => void;
   onDuplicate: () => void;
-  onRecalculatePayment: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
   canMoveUp: boolean;
@@ -22,7 +21,6 @@ export function TrackCard({
   onUpdate,
   onDelete,
   onDuplicate,
-  onRecalculatePayment,
   onMoveUp,
   onMoveDown,
   canMoveUp,
@@ -31,6 +29,7 @@ export function TrackCard({
   primeRate,
 }: TrackCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+
   const [deleteConfirm, setDeleteConfirm] = useState(false);
 
   const handleDelete = () => {
@@ -170,10 +169,10 @@ export function TrackCard({
           <TrackForm
             track={track}
             onUpdate={onUpdate}
-            onRecalculatePayment={onRecalculatePayment}
             getFieldError={getFieldError}
             primeRate={primeRate}
           />
+
         </div>
       )}
     </div>

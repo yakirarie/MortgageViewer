@@ -1,5 +1,16 @@
-import { describe, it, expect, vi } from "vitest";
-import { getMarketRates, refreshMarketRates, formatLastUpdated } from "./rates-api";
+import { describe, it, expect } from "vitest";
+
+import {
+  getMarketRates,
+  refreshMarketRates,
+  formatLastUpdated,
+  getCurrentBaseRate,
+  getPrimeBaseRateAt,
+  primeEffectiveRate,
+  populatePrimeRateHistory,
+  BOI_BASE_RATE_HISTORY,
+} from "./rates-api";
+
 
 describe("getMarketRates", () => {
   it("returns market rates with correct structure", () => {
@@ -52,16 +63,132 @@ describe("getMarketRates", () => {
     expect(rates1.source).toBe(rates2.source);
   });
 
-  it("returns expected values for January 2025", () => {
+  it("returns expected values for July 2026", () => {
     const rates = getMarketRates();
 
     expect(rates.reference_market_rate).toBe(0.042);
     expect(rates.alternative_investment_annual_return).toBe(0.06);
-    expect(rates.prime_rate_current).toBe(0.045);
-    expect(rates.last_updated).toBe("2025-01-01");
+    // Prime = BoI base (3.5%) + 1.5% spread = 5.0%
+    expect(rates.prime_rate_current).toBe(0.05);
+    expect(rates.last_updated).toBe("2026-07-09");
     expect(rates.source).toBe("Bank of Israel (manually updated)");
   });
+
 });
+
+describe("BOI_BASE_RATE_HISTORY", () => {
+  it("is sorted newest → oldest", () => {
+    for (let i = 0; i < BOI_BASE_RATE_HISTORY.length - 1; i++) {
+      const cur = new Date(BOI_BASE_RATE_HISTORY[i].date).getTime();
+      const next = new Date(BOI_BASE_RATE_HISTORY[i + 1].date).getTime();
+      expect(cur).toBeGreaterThanOrEqual(next);
+    }
+  });
+
+  it("contains the current base rate as the first entry", () => {
+    expect(BOI_BASE_RATE_HISTORY[0].base_rate).toBe(0.035);
+    expect(BOI_BASE_RATE_HISTORY[0].date).toBe("2026-07-09");
+  });
+
+  it("contains the oldest known rate as the last entry", () => {
+    expect(BOI_BASE_RATE_HISTORY[BOI_BASE_RATE_HISTORY.length - 1].date).toBe("2017-01-26");
+    expect(BOI_BASE_RATE_HISTORY[BOI_BASE_RATE_HISTORY.length - 1].base_rate).toBe(0.001);
+  });
+});
+
+describe("getCurrentBaseRate", () => {
+  it("returns the latest BoI base rate", () => {
+    expect(getCurrentBaseRate()).toBe(0.035);
+  });
+});
+
+describe("getPrimeBaseRateAt", () => {
+  it("returns the current rate for a date after the latest entry", () => {
+    expect(getPrimeBaseRateAt("2030-01-01")).toBe(0.035);
+  });
+
+  it("returns the rate in effect on a given date", () => {
+    // 2023-01-05 → 3.75%
+    expect(getPrimeBaseRateAt("2023-01-05")).toBe(0.0375);
+    // 2023-02-23 → 4.25%
+    expect(getPrimeBaseRateAt("2023-02-23")).toBe(0.0425);
+    // 2022-11-24 → 3.25%
+    expect(getPrimeBaseRateAt("2022-12-01")).toBe(0.0325);
+  });
+
+  it("returns the oldest known rate for dates before the table", () => {
+    expect(getPrimeBaseRateAt("2010-01-01")).toBe(0.001);
+  });
+
+  it("returns the current rate for an empty or invalid date", () => {
+    expect(getPrimeBaseRateAt("")).toBe(0.035);
+    expect(getPrimeBaseRateAt("not-a-date")).toBe(0.035);
+  });
+});
+
+describe("primeEffectiveRate", () => {
+  it("computes Effective Rate = (Base Rate + 1.5%) + Margin", () => {
+    // 4.5% base + 1.5% spread - 0.6% margin = 5.4%
+    expect(primeEffectiveRate(0.045, -0.006)).toBeCloseTo(0.054);
+    // 3.5% base + 1.5% spread + 0 margin = 5.0%
+    expect(primeEffectiveRate(0.035, 0)).toBeCloseTo(0.05);
+    // 3.5% base + 1.5% spread + 0.5% margin = 5.5%
+    expect(primeEffectiveRate(0.035, 0.005)).toBeCloseTo(0.055);
+  });
+});
+
+
+describe("populatePrimeRateHistory", () => {
+  it("returns an empty array for a missing start date", () => {
+    expect(populatePrimeRateHistory("", -0.006)).toEqual([]);
+    expect(populatePrimeRateHistory("not-a-date", -0.006)).toEqual([]);
+  });
+
+  it("populates entries from the start date onward, oldest → newest", () => {
+    const history = populatePrimeRateHistory("2023-01-05", -0.006);
+    expect(history.length).toBeGreaterThan(0);
+    // oldest first
+    expect(history[0].effective_date).toBe("2023-01-05");
+    expect(history[history.length - 1].effective_date).toBe("2026-07-09");
+    // sorted ascending
+    for (let i = 0; i < history.length - 1; i++) {
+      expect(history[i].effective_date < history[i + 1].effective_date).toBe(true);
+    }
+  });
+
+  it("applies the margin to each entry and tags as auto-populated", () => {
+    const history = populatePrimeRateHistory("2023-01-05", -0.006);
+    for (const entry of history) {
+      const baseRate = getPrimeBaseRateAt(entry.effective_date);
+      // Effective = (base + 1.5% spread) + margin
+      expect(entry.annual_interest_rate).toBeCloseTo(baseRate + 0.015 - 0.006);
+      expect(entry.is_manual_override).toBe(false);
+    }
+  });
+
+
+  it("excludes entries before the start date", () => {
+    const history = populatePrimeRateHistory("2024-01-01", 0);
+    expect(history[0].effective_date).toBe("2024-01-04");
+    expect(history.every((e) => e.effective_date >= "2024-01-01")).toBe(true);
+  });
+
+  it("matches the known BoI timeline for a specific window", () => {
+    const history = populatePrimeRateHistory("2022-01-01", 0);
+    // Effective = base + 1.5% spread (margin 0)
+    // 2022-02-24 → 0.1% + 1.5% = 1.6%
+    // 2022-04-14 → 0.35% + 1.5% = 1.85%
+    // 2022-05-26 → 0.75% + 1.5% = 2.25%
+    const feb = history.find((e) => e.effective_date === "2022-02-24");
+    const apr = history.find((e) => e.effective_date === "2022-04-14");
+    const may = history.find((e) => e.effective_date === "2022-05-26");
+    expect(feb?.annual_interest_rate).toBeCloseTo(0.016);
+    expect(apr?.annual_interest_rate).toBeCloseTo(0.0185);
+    expect(may?.annual_interest_rate).toBeCloseTo(0.0225);
+  });
+
+});
+
 
 describe("refreshMarketRates", () => {
   it("returns a promise that resolves to market rates", async () => {

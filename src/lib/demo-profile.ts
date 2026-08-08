@@ -2,6 +2,8 @@
 
 import type { Profile, Track } from './types';
 import { generateId } from './utils';
+import { populatePrimeRateHistory } from './rates-api';
+
 
 export function createDemoProfile(): Profile {
   const now = new Date().toISOString();
@@ -20,7 +22,15 @@ export function createDemoProfile(): Profile {
       notice_fee: 720,
       months_to_reset: null,
       is_cpi_linked: false,
+      start_date: '2023-01-05',
+      first_payout_date: '2023-02-05',
+      prime_margin: -0.006,
+      original_principal: 500000,
+      original_term_months: 360,
+      rate_history: populatePrimeRateHistory('2023-01-05', -0.006),
+
     },
+
     {
       track_id: generateId(),
       custom_name: 'Fixed Unlinked',
