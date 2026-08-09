@@ -24,7 +24,11 @@ import {
   fixedTrackGapPenalty,
   nextResetDate,
   monthsToNextReset,
+  totalExitCost,
+  computeAmlatPeareiRibit,
+  clampRate,
 } from "./mortgage-math";
+
 
 
 
@@ -44,13 +48,15 @@ function makeTrack(overrides: Partial<Track>): Track {
     remaining_term_months: 1,
     monthly_repayment: 0,
     is_payment_manual_override: false,
-    early_exit_penalty: 0,
+    amlat_pearei_ribit: 0,
     notice_fee: 0,
+    operational_fee: 60,
     months_to_reset: null,
     is_cpi_linked: false,
     ...overrides,
   };
 }
+
 
 const prime = makeTrack({
   track_id: "prime",
@@ -216,20 +222,24 @@ describe("netPayoffBenefit", () => {
   it("computes interest saved matching the hand-computed value (reduce_term, no penalty/fee)", () => {
     const result = netPayoffBenefit({ track: prime, lumpSum: 100000 });
     expect(result.interestSaved).toBeCloseTo(133987.45, 0);
-    expect(result.penaltyPaid).toBe(0);
+    // The fixed ₪60 operational fee (Amlat Hotza'ot Tipuliyot) is always due on
+    // early payoff, even when there is no interest-gap penalty.
+    expect(result.penaltyPaid).toBe(60);
     expect(result.noticeFeePaid).toBe(0);
-    expect(result.netPayoffBenefit).toBeCloseTo(133987.45, 0);
+    expect(result.netPayoffBenefit).toBeCloseTo(133987.45 - 60, 0);
   });
 
   it("subtracts penalty and notice fee from the benefit", () => {
     const withCosts = makeTrack({
       ...prime,
-      early_exit_penalty: 20000,
+      amlat_pearei_ribit: 20000,
       notice_fee: 720,
     });
     const result = netPayoffBenefit({ track: withCosts, lumpSum: 100000 });
-    expect(result.netPayoffBenefit).toBeCloseTo(133987.45 - 20000 - 720, 0);
+    expect(result.netPayoffBenefit).toBeCloseTo(133987.45 - 20000 - 720 - 60, 0);
   });
+
+
 
   it("waives the notice fee when noticeWaived is true", () => {
     const withFee = makeTrack({ ...prime, notice_fee: 720 });
@@ -344,9 +354,10 @@ describe("recommendActionForTrack", () => {
     const highRateNoPenalty = makeTrack({
       track_id: "high-rate",
       annual_interest_rate: weightedRate + 0.01,
-      early_exit_penalty: 0,
+      amlat_pearei_ribit: 0,
       principal_balance: 100000,
     });
+
     const rec = recommendActionForTrack(highRateNoPenalty, weightedRate, 0.043);
     expect(rec.action).toBe("PAY_OFF_NOW");
   });
@@ -358,10 +369,11 @@ describe("recommendActionForTrack", () => {
     const nearReset = makeTrack({
       track_id: "near-reset",
       annual_interest_rate: weightedRate + 0.01,
-      early_exit_penalty: 500,
+      amlat_pearei_ribit: 500,
       months_to_reset: 3,
       principal_balance: 100000,
     });
+
     const rec = recommendActionForTrack(nearReset, weightedRate, 0.043);
     expect(rec.action).toBe("WAIT_FOR_RESET");
   });
@@ -370,10 +382,11 @@ describe("recommendActionForTrack", () => {
     const bothMatch = makeTrack({
       track_id: "both-match",
       annual_interest_rate: weightedRate + 0.01,
-      early_exit_penalty: 0,
+      amlat_pearei_ribit: 0,
       months_to_reset: 3,
       principal_balance: 100000,
     });
+
     const rec = recommendActionForTrack(bothMatch, weightedRate, 0.043);
     expect(rec.action).toBe("PAY_OFF_NOW");
   });
@@ -383,8 +396,9 @@ describe("recommendActionForTrack", () => {
       track_id: "high-penalty",
       annual_interest_rate: weightedRate, // not above average, so rule 1 doesn't fire
       principal_balance: 100000,
-      early_exit_penalty: 8000, // 8% of balance
+      amlat_pearei_ribit: 8000, // 8% of balance
     });
+
     const rec = recommendActionForTrack(highPenalty, weightedRate, 0.043);
     expect(rec.action).toBe("HOLD");
   });
@@ -394,8 +408,9 @@ describe("recommendActionForTrack", () => {
       track_id: "refi",
       annual_interest_rate: 0.043 + 0.01, // clearly above reference market rate
       principal_balance: 100000,
-      early_exit_penalty: 1000, // 1% of balance, under the 2% threshold
+      amlat_pearei_ribit: 1000, // 1% of balance, under the 2% threshold
     });
+
     // Use a low weighted rate so rule 1 (pay off now) doesn't preempt this
     const rec = recommendActionForTrack(refiCandidate, 0.043 + 0.01, 0.043);
     expect(rec.action).toBe("CONSIDER_REFINANCING");
@@ -408,15 +423,16 @@ describe("rankTracksByPriority", () => {
     const good = makeTrack({
       track_id: "good",
       annual_interest_rate: weightedRate + 0.02,
-      early_exit_penalty: 0,
+      amlat_pearei_ribit: 0,
       principal_balance: 100000,
     });
     const bad = makeTrack({
       track_id: "bad",
       annual_interest_rate: weightedRate - 0.01,
-      early_exit_penalty: 20000,
+      amlat_pearei_ribit: 20000,
       principal_balance: 100000,
     });
+
     const ranked = rankTracksByPriority([bad, good]);
     expect(ranked[0].track_id).toBe("good");
     expect(ranked[1].track_id).toBe("bad");
@@ -1095,6 +1111,131 @@ describe("monthsToNextReset", () => {
     expect(monthsToNextReset("", "2023-10-10")).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// §4.6 Early Exit Cost Helpers
+// ---------------------------------------------------------------------------
+
+describe("clampRate", () => {
+  it("clamps a rate to 6 decimal places", () => {
+    expect(clampRate(0.0551234567)).toBeCloseTo(0.055123, 6);
+  });
+
+  it("rounds a negative rate to 6 decimal places (does not sanitize sign)", () => {
+    expect(clampRate(-0.01)).toBe(-0.01);
+    expect(clampRate(-0.0551234567)).toBeCloseTo(-0.055123, 6);
+  });
+
+
+  it("returns 0 for NaN", () => {
+    expect(clampRate(NaN)).toBe(0);
+  });
+
+  it("passes through a clean rate unchanged", () => {
+    expect(clampRate(0.05)).toBe(0.05);
+  });
+});
+
+describe("computeAmlatPeareiRibit", () => {
+  it("returns 0 for a PRIME track (Prime follows the BoI base rate, no interest gap)", () => {
+    const primeTrack = makeTrack({
+      track_type: "PRIME",
+      principal_balance: 500000,
+      annual_interest_rate: 0.06,
+      remaining_term_months: 120,
+    });
+    expect(computeAmlatPeareiRibit(primeTrack, 0.04)).toBe(0);
+  });
+
+  it("returns 0 when the loan rate is at or below the BoI average rate", () => {
+    const track = makeTrack({
+      track_type: "FIXED_UNLINKED",
+      principal_balance: 500000,
+      annual_interest_rate: 0.04,
+      remaining_term_months: 120,
+    });
+    expect(computeAmlatPeareiRibit(track, 0.04)).toBe(0);
+  });
+
+  it("returns 0 for a zero balance or zero remaining months", () => {
+    const zeroBalance = makeTrack({
+      track_type: "FIXED_UNLINKED",
+      principal_balance: 0,
+      annual_interest_rate: 0.06,
+      remaining_term_months: 120,
+    });
+    const zeroTerm = makeTrack({
+      track_type: "FIXED_UNLINKED",
+      principal_balance: 500000,
+      annual_interest_rate: 0.06,
+      remaining_term_months: 0,
+    });
+    expect(computeAmlatPeareiRibit(zeroBalance, 0.04)).toBe(0);
+    expect(computeAmlatPeareiRibit(zeroTerm, 0.04)).toBe(0);
+  });
+
+  it("computes a positive penalty when the loan rate exceeds the BoI average", () => {
+    const track = makeTrack({
+      track_type: "FIXED_UNLINKED",
+      principal_balance: 500000,
+      annual_interest_rate: 0.06,
+      remaining_term_months: 120,
+    });
+    const penalty = computeAmlatPeareiRibit(track, 0.04);
+    expect(penalty).toBeGreaterThan(0);
+    expect(penalty).toBeLessThan(500000);
+  });
+
+  it("produces a larger penalty for a larger rate gap", () => {
+    const smallGapTrack = makeTrack({
+      track_type: "FIXED_UNLINKED",
+      principal_balance: 500000,
+      annual_interest_rate: 0.05,
+      remaining_term_months: 120,
+    });
+    const largeGapTrack = makeTrack({
+      track_type: "FIXED_UNLINKED",
+      principal_balance: 500000,
+      annual_interest_rate: 0.06,
+      remaining_term_months: 120,
+    });
+    const smallGap = computeAmlatPeareiRibit(smallGapTrack, 0.04);
+    const largeGap = computeAmlatPeareiRibit(largeGapTrack, 0.04);
+    expect(largeGap).toBeGreaterThan(smallGap);
+  });
+});
+
+
+
+describe("totalExitCost", () => {
+  it("sums the interest-gap penalty, notice fee, and operational fee", () => {
+    const track = makeTrack({
+      amlat_pearei_ribit: 20000,
+      notice_fee: 720,
+      operational_fee: 60,
+    });
+    expect(totalExitCost(track)).toBe(20000 + 720 + 60);
+  });
+
+  it("defaults the operational fee to 60 when not set", () => {
+    const track = makeTrack({
+      amlat_pearei_ribit: 1000,
+      notice_fee: 100,
+      operational_fee: undefined as any,
+    });
+    expect(totalExitCost(track)).toBe(1000 + 100 + 60);
+  });
+
+  it("returns 0 when all fees are zero", () => {
+    const track = makeTrack({
+      amlat_pearei_ribit: 0,
+      notice_fee: 0,
+      operational_fee: 0,
+    });
+    expect(totalExitCost(track)).toBe(0);
+  });
+});
+
 
 
 

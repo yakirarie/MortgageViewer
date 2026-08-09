@@ -41,8 +41,10 @@ describe("createDemoProfile", () => {
       expect(track).toHaveProperty("remaining_term_months");
       expect(track).toHaveProperty("monthly_repayment");
       expect(track).toHaveProperty("is_payment_manual_override");
-      expect(track).toHaveProperty("early_exit_penalty");
+      expect(track).toHaveProperty("amlat_pearei_ribit");
       expect(track).toHaveProperty("notice_fee");
+      expect(track).toHaveProperty("operational_fee");
+
       expect(track).toHaveProperty("months_to_reset");
       expect(track).toHaveProperty("is_cpi_linked");
     });
@@ -190,10 +192,16 @@ describe("createDefaultTrack", () => {
     expect(track.is_payment_manual_override).toBe(false);
   });
 
-  it("sets early_exit_penalty to 0", () => {
+  it("sets amlat_pearei_ribit to 0", () => {
     const track = createDefaultTrack();
-    expect(track.early_exit_penalty).toBe(0);
+    expect(track.amlat_pearei_ribit).toBe(0);
   });
+
+  it("sets operational_fee to 60", () => {
+    const track = createDefaultTrack();
+    expect(track.operational_fee).toBe(60);
+  });
+
 
   it("sets notice_fee to 0", () => {
     const track = createDefaultTrack();
@@ -222,8 +230,9 @@ describe("duplicateTrack", () => {
       remaining_term_months: 120,
       monthly_repayment: 1000,
       is_payment_manual_override: false,
-      early_exit_penalty: 0,
+      amlat_pearei_ribit: 0,
       notice_fee: 0,
+      operational_fee: 60,
       months_to_reset: null,
       is_cpi_linked: false,
     };
@@ -231,6 +240,7 @@ describe("duplicateTrack", () => {
     const duplicate = duplicateTrack(original);
 
     expect(duplicate.track_id).not.toBe(original.track_id);
+
     expect(duplicate.track_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
   });
 
@@ -244,14 +254,16 @@ describe("duplicateTrack", () => {
       remaining_term_months: 120,
       monthly_repayment: 1000,
       is_payment_manual_override: false,
-      early_exit_penalty: 0,
+      amlat_pearei_ribit: 0,
       notice_fee: 0,
+      operational_fee: 60,
       months_to_reset: null,
       is_cpi_linked: false,
     };
 
     const duplicate = duplicateTrack(original);
     expect(duplicate.custom_name).toBe("Original Track (copy)");
+
   });
 
   it("copies all other fields", () => {
@@ -264,8 +276,9 @@ describe("duplicateTrack", () => {
       remaining_term_months: 180,
       monthly_repayment: 2000,
       is_payment_manual_override: true,
-      early_exit_penalty: 5000,
+      amlat_pearei_ribit: 5000,
       notice_fee: 300,
+      operational_fee: 60,
       months_to_reset: null,
       is_cpi_linked: true,
     };
@@ -278,11 +291,13 @@ describe("duplicateTrack", () => {
     expect(duplicate.remaining_term_months).toBe(original.remaining_term_months);
     expect(duplicate.monthly_repayment).toBe(original.monthly_repayment);
     expect(duplicate.is_payment_manual_override).toBe(original.is_payment_manual_override);
-    expect(duplicate.early_exit_penalty).toBe(original.early_exit_penalty);
+    expect(duplicate.amlat_pearei_ribit).toBe(original.amlat_pearei_ribit);
     expect(duplicate.notice_fee).toBe(original.notice_fee);
+    expect(duplicate.operational_fee).toBe(original.operational_fee);
     expect(duplicate.months_to_reset).toBe(original.months_to_reset);
     expect(duplicate.is_cpi_linked).toBe(original.is_cpi_linked);
   });
+
 
   it("does not mutate the original track", () => {
     const original: Track = {
@@ -294,13 +309,15 @@ describe("duplicateTrack", () => {
       remaining_term_months: 120,
       monthly_repayment: 1000,
       is_payment_manual_override: false,
-      early_exit_penalty: 0,
+      amlat_pearei_ribit: 0,
       notice_fee: 0,
+      operational_fee: 60,
       months_to_reset: null,
       is_cpi_linked: false,
     };
 
     const originalTrackId = original.track_id;
+
     const originalName = original.custom_name;
 
     duplicateTrack(original);

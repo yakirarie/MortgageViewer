@@ -72,15 +72,21 @@ export function validateTrack(track: Track): ValidationResult {
     errors.push({ field: 'monthly_repayment', message: 'Monthly repayment cannot be negative', trackId: track.track_id });
   }
 
-  // Field 9: early_exit_penalty
-  if (track.early_exit_penalty < 0) {
-    errors.push({ field: 'early_exit_penalty', message: 'Early exit penalty cannot be negative', trackId: track.track_id });
+  // Field 9: amlat_pearei_ribit (interest gap penalty)
+  if (track.amlat_pearei_ribit < 0) {
+    errors.push({ field: 'amlat_pearei_ribit', message: 'Interest gap penalty cannot be negative', trackId: track.track_id });
   }
 
   // Field 10: notice_fee
   if (track.notice_fee < 0) {
     errors.push({ field: 'notice_fee', message: 'Notice fee cannot be negative', trackId: track.track_id });
   }
+
+  // Field 10b: operational_fee (fixed at 60 per track)
+  if (track.operational_fee < 0) {
+    errors.push({ field: 'operational_fee', message: 'Operational fee cannot be negative', trackId: track.track_id });
+  }
+
 
   // Field 11: months_to_reset
   if (track.months_to_reset !== null) {

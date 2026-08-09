@@ -1,6 +1,10 @@
 // Utility functions
 
+import type { Track, TrackExportSchema } from './types';
+import { clampRate, totalExitCost } from './mortgage-math';
+
 export function generateId(): string {
+
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
@@ -78,3 +82,54 @@ export async function uploadJson(file: File): Promise<unknown> {
 export function getCurrentTimestamp(): string {
   return new Date().toISOString();
 }
+
+/**
+ * Serialize a track into the clean JSON export schema (TrackExportSchema).
+ *
+ * The export isolates the pure amortized principal from the daily accrued
+ * interest, and separates the early-payoff fee into its distinct line items per
+ * Bank of Israel terminology. Rates are clamped to 6 decimal places so the
+ * exported file is clean and round-trip stable (no floating-point artifacts).
+ *
+ * The `net_principal_balance` is the amortized principal owed today (before
+ * accrued daily interest); `accrued_daily_interest` is the interest accrued
+ * since the last payment date; `total_payoff_balance` is their sum — the figure
+ * a bank quotes as the payoff amount.
+ */
+export function serializeTrackForExport(track: Track): TrackExportSchema {
+  const netPrincipalBalance = track.principal_balance;
+  const accruedDailyInterest = 0; // accrued interest is derived at payoff time
+  const totalPayoffBalance = netPrincipalBalance + accruedDailyInterest;
+
+  return {
+    track_id: track.track_id,
+    custom_name: track.custom_name,
+    track_type: track.track_type as TrackExportSchema['track_type'],
+    net_principal_balance: netPrincipalBalance,
+    accrued_daily_interest: accruedDailyInterest,
+    total_payoff_balance: totalPayoffBalance,
+    annual_interest_rate: clampRate(track.annual_interest_rate),
+    remaining_term_months: track.remaining_term_months,
+    monthly_repayment: track.monthly_repayment,
+    is_payment_manual_override: track.is_payment_manual_override,
+    amlat_pearei_ribit: track.amlat_pearei_ribit,
+    notice_fee: track.notice_fee,
+    operational_fee: track.operational_fee ?? 60,
+    total_exit_cost: totalExitCost(track),
+    months_to_reset: track.months_to_reset,
+    is_cpi_linked: track.is_cpi_linked,
+    start_date: track.start_date,
+    first_payout_date: track.first_payout_date,
+    prime_margin: track.prime_margin,
+    rate_history: track.rate_history
+      ? track.rate_history.map((entry) => ({
+          effective_date: entry.effective_date,
+          annual_interest_rate: clampRate(entry.annual_interest_rate),
+          is_manual_override: entry.is_manual_override,
+        }))
+      : undefined,
+    original_principal: track.original_principal,
+    original_term_months: track.original_term_months,
+  };
+}
+

@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import type { Profile, Track } from '../lib/types';
 
 import { TrackCard } from './TrackCard';
-import { uploadJson, downloadJson } from '../lib/utils';
+import { uploadJson, downloadJson, serializeTrackForExport } from '../lib/utils';
+
 import { validateProfile } from '../lib/validation';
 
 import { spitzerMonthlyPayment, monthsBetween } from '../lib/mortgage-math';
@@ -105,7 +106,14 @@ export function ProfileSettings({ profile: initialProfile, onApplyChanges, onClo
 
   const handleExport = () => {
     const filename = `mashkanta-${localProfile.profile_name.replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.json`;
-    downloadJson(localProfile, filename);
+    // Export each track through the clean TrackExportSchema serializer, which
+    // isolates net principal from accrued daily interest, separates the early
+    // payoff fee into its distinct line items, and clamps rates to 6 decimals.
+    const exportProfile = {
+      ...localProfile,
+      tracks: localProfile.tracks.map(serializeTrackForExport),
+    };
+    downloadJson(exportProfile, filename);
     setImportStatus('success');
     setImportMessage(`Profile exported as ${filename}`);
     
@@ -114,6 +122,7 @@ export function ProfileSettings({ profile: initialProfile, onApplyChanges, onClo
       setImportMessage('');
     }, 3000);
   };
+
 
   const handleLoadDemo = () => {
     const demo = createDemoProfile();

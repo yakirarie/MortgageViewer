@@ -29,10 +29,15 @@ export interface Track {
   remaining_term_months: number;
   monthly_repayment: number; // ₪
   is_payment_manual_override: boolean;
-  early_exit_penalty: number; // ₪ (Amlat Pirachon)
-  notice_fee: number; // ₪ (Amlat Hoda'a Mukdamet)
+  /** Interest gap penalty (Amlat Pe'arei Ribit) in ₪. 0 for Prime tracks. */
+  amlat_pearei_ribit: number;
+  /** Notice fee (Amlat Hoda'a Mukdamet) in ₪ — raw input from the bank statement. */
+  notice_fee: number;
+  /** Operational fee (Amlat Hotza'ot Tipuliyot) in ₪ — fixed at 60 per track. */
+  operational_fee: number;
   months_to_reset: number | null;
   is_cpi_linked: boolean;
+
   /** ISO date the track was taken out (used to build the Prime rate timeline). */
   start_date?: string;
   /**
@@ -54,12 +59,54 @@ export interface Track {
 
 
 
+/**
+ * The JSON serialization schema for a single track on export. Cleanly isolates
+ * the pure amortized principal from the daily accrued interest, and separates
+ * the early-payoff fee into its distinct line items per Bank of Israel
+ * terminology. Rates are clamped to 6 decimal places to avoid floating-point
+ * artifacts (e.g. 0.049800000000000004 → 0.0498).
+ */
+export interface TrackExportSchema {
+  track_id: string;
+  custom_name: string;
+  track_type: 'PRIME' | 'FIXED_UNLINKED' | 'VARIABLE_5Y' | 'FIXED_LINKED';
+  /** Pure amortized principal (₪), before accrued daily interest. */
+  net_principal_balance: number;
+  /** Accrued daily interest since the last payment date (₪). */
+  accrued_daily_interest: number;
+  /** net_principal_balance + accrued_daily_interest (₪). */
+  total_payoff_balance: number;
+  /** Clamped float (decimal, e.g. 0.0498). */
+  annual_interest_rate: number;
+  remaining_term_months: number;
+  monthly_repayment: number;
+  /** True only when the user explicitly typed a custom payment. */
+  is_payment_manual_override: boolean;
+  /** Interest gap penalty (Amlat Pe'arei Ribit) in ₪ (0 for Prime). */
+  amlat_pearei_ribit: number;
+  /** Notice fee (Amlat Hoda'a Mukdamet) in ₪ — raw input from the bank. */
+  notice_fee: number;
+  /** Operational fee (Amlat Hotza'ot Tipuliyot) in ₪ — fixed at 60. */
+  operational_fee: number;
+  /** Total early exit cost = amlat_pearei_ribit + notice_fee + operational_fee. */
+  total_exit_cost: number;
+  months_to_reset: number | null;
+  is_cpi_linked: boolean;
+  start_date?: string;
+  first_payout_date?: string;
+  prime_margin?: number;
+  rate_history?: RateHistoryEntry[];
+  original_principal?: number;
+  original_term_months?: number;
+}
+
 export interface Profile {
   schema_version: number;
   profile_name: string;
   created_at: string;
   tracks: Track[];
 }
+
 
 
 export type PayoffReductionMode = "reduce_term" | "reduce_payment";

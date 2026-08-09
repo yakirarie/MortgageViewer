@@ -12,7 +12,9 @@ import {
   simulateFixedAmortization,
   nextResetDate,
   monthsToNextReset,
+  totalExitCost,
 } from '../lib/mortgage-math';
+
 
 
 
@@ -690,96 +692,123 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
       <div>
         <h4 className="text-sm font-semibold text-text-primary mb-3">Bank Terms</h4>
 
-        {/* Early Exit Penalty */}
+        {/* Amlat Pe'arei Ribit (Interest Gap Penalty) */}
         <div>
           <label className="block text-sm font-medium text-text-secondary mb-1">
-            Early Exit Penalty (₪)
-            <span className="text-accent-info ml-1 cursor-help" title="Amlat Pirachon — penalty for early payoff">
+            Amlat Pe'arei Ribit (₪)
+            <span className="text-accent-info ml-1 cursor-help" title="Interest gap penalty (Amlat Pe'arei Ribit) — compensates the bank for the interest it would have earned. Always 0 for Prime tracks, which follow the BoI base rate.">
               (?)
             </span>
           </label>
-          <div className="flex gap-2">
-            <div className="flex-1 relative">
-              <input
-                type="text"
-                value={formatCurrency(track.early_exit_penalty)}
-                onChange={(e) => {
-                  const value = e.target.value.replace(/[^\d]/g, '');
-                  onUpdate({ early_exit_penalty: value ? parseFloat(value) : 0 });
-                }}
-                onBlur={(e) => handleCurrencyBlur('early_exit_penalty', e.target.value)}
-                className={`w-full bg-bg-surface border rounded px-3 py-2 text-text-primary focus:outline-none font-mono text-right font-tabular-nums ${
-                  getFieldError('early_exit_penalty') ? 'border-accent-danger' : 'border-border-subtle focus:border-accent-info'
-                }`}
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                // Estimate penalty using simplified formula from PRD
-                const estimatedPenalty = Math.max(
-                  0,
-                  displayTotalPayoff *
-                    Math.max(0, track.annual_interest_rate - 0.043) *
-                    (displayTerm / 12) *
-                    0.6
-                );
+          {isPrime ? (
+            <>
+              <div className="w-full bg-bg-surface border border-border-subtle rounded px-3 py-2 text-text-primary font-mono text-right font-tabular-nums opacity-80">
+                ₪0
+              </div>
+              <p className="text-text-secondary text-xs mt-1">
+                Prime tracks follow the BoI base rate, so there is no interest gap to compensate on early payoff.
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="flex gap-2">
+                <div className="flex-1 relative">
+                  <input
+                    type="text"
+                    value={formatCurrency(track.amlat_pearei_ribit)}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/[^\d]/g, '');
+                      onUpdate({ amlat_pearei_ribit: value ? parseFloat(value) : 0 });
+                    }}
+                    onBlur={(e) => handleCurrencyBlur('amlat_pearei_ribit', e.target.value)}
+                    className={`w-full bg-bg-surface border rounded px-3 py-2 text-text-primary focus:outline-none font-mono text-right font-tabular-nums ${
+                      getFieldError('amlat_pearei_ribit') ? 'border-accent-danger' : 'border-border-subtle focus:border-accent-info'
+                    }`}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Estimate penalty using simplified formula from PRD
+                    const estimatedPenalty = Math.max(
+                      0,
+                      displayTotalPayoff *
+                        Math.max(0, track.annual_interest_rate - 0.043) *
+                        (displayTerm / 12) *
+                        0.6
+                    );
 
-                onUpdate({ early_exit_penalty: estimatedPenalty });
-              }}
-              className="px-3 py-2 bg-bg-surface-raised border border-border-subtle rounded text-text-secondary hover:text-text-primary text-sm"
-              title="Estimate penalty using simplified formula"
-            >
-              Estimate
-            </button>
-          </div>
-          {getFieldError('early_exit_penalty') && (
-            <p className="text-accent-danger text-xs mt-1">{getFieldError('early_exit_penalty')}</p>
+                    onUpdate({ amlat_pearei_ribit: estimatedPenalty });
+                  }}
+                  className="px-3 py-2 bg-bg-surface-raised border border-border-subtle rounded text-text-secondary hover:text-text-primary text-sm"
+                  title="Estimate penalty using simplified formula"
+                >
+                  Estimate
+                </button>
+              </div>
+              {getFieldError('amlat_pearei_ribit') && (
+                <p className="text-accent-danger text-xs mt-1">{getFieldError('amlat_pearei_ribit')}</p>
+              )}
+              <p className="text-text-secondary text-xs mt-1">
+                Estimate only. Your bank's actual penalty uses a regulated formula — request the exact figure from your bank.
+              </p>
+            </>
           )}
-          <p className="text-text-secondary text-xs mt-1">
-            Estimate only. Your bank's actual penalty uses a regulated formula — request the exact figure from your bank.
-          </p>
         </div>
 
-        {/* Notice Fee */}
+        {/* Notice Fee (raw input from the bank statement) */}
         <div className="mt-3">
           <label className="block text-sm font-medium text-text-secondary mb-1">
             Notice Fee (₪)
-            <span className="text-accent-info ml-1 cursor-help" title="Amlat Hoda'a Mukdamet — fee for advance notice">
+            <span className="text-accent-info ml-1 cursor-help" title="Amlat Hoda'a Mukdamet — fee for advance notice. Enter the exact figure from your bank statement.">
               (?)
             </span>
           </label>
-          <div className="flex gap-2">
-            <div className="flex-1 relative">
-              <input
-                type="text"
-                value={formatCurrency(track.notice_fee)}
-                onChange={(e) => {
-                  const value = e.target.value.replace(/[^\d]/g, '');
-                  onUpdate({ notice_fee: value ? parseFloat(value) : 0 });
-                }}
-                onBlur={(e) => handleCurrencyBlur('notice_fee', e.target.value)}
-                className={`w-full bg-bg-surface border rounded px-3 py-2 text-text-primary focus:outline-none font-mono text-right font-tabular-nums ${
-                  getFieldError('notice_fee') ? 'border-accent-danger' : 'border-border-subtle focus:border-accent-info'
-                }`}
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                onUpdate({ notice_fee: displayTotalPayoff * 0.0015 });
+          <div className="flex-1 relative">
+            <input
+              type="text"
+              value={formatCurrency(track.notice_fee)}
+              onChange={(e) => {
+                const value = e.target.value.replace(/[^\d]/g, '');
+                onUpdate({ notice_fee: value ? parseFloat(value) : 0 });
               }}
-
-              className="px-3 py-2 bg-bg-surface-raised border border-border-subtle rounded text-text-secondary hover:text-text-primary text-sm"
-              title="Recalculate as 0.15% of balance"
-            >
-              Auto
-            </button>
+              onBlur={(e) => handleCurrencyBlur('notice_fee', e.target.value)}
+              className={`w-full bg-bg-surface border rounded px-3 py-2 text-text-primary focus:outline-none font-mono text-right font-tabular-nums ${
+                getFieldError('notice_fee') ? 'border-accent-danger' : 'border-border-subtle focus:border-accent-info'
+              }`}
+            />
           </div>
           {getFieldError('notice_fee') && (
             <p className="text-accent-danger text-xs mt-1">{getFieldError('notice_fee')}</p>
           )}
         </div>
+
+        {/* Operational Fee (fixed, read-only) */}
+        <div className="mt-3">
+          <label className="block text-sm font-medium text-text-secondary mb-1">
+            Operational Fee (₪)
+            <span className="text-accent-info ml-1 cursor-help" title="Amlat Hotza'ot Tipuliyot — fixed operational fee of ₪60 per track.">
+              (?)
+            </span>
+          </label>
+          <div className="w-full bg-bg-surface border border-border-subtle rounded px-3 py-2 text-text-primary font-mono text-right font-tabular-nums opacity-80">
+            {formatCurrency(track.operational_fee ?? 60)}
+          </div>
+        </div>
+
+        {/* Total Early Exit Cost (derived, read-only) */}
+        <div className="mt-3">
+          <label className="block text-sm font-medium text-text-secondary mb-1">
+            Total Early Exit Cost (₪)
+            <span className="text-accent-info ml-1 cursor-help" title="Amlat Piraon Mukdam = Amlat Pe'arei Ribit + Notice Fee + Operational Fee.">
+              (?)
+            </span>
+          </label>
+          <div className="w-full bg-bg-surface border border-border-subtle rounded px-3 py-2 text-text-primary font-mono text-right font-tabular-nums opacity-80">
+            {formatCurrency(totalExitCost(track))}
+          </div>
+        </div>
+
 
         {/* Next Reset (derived, read-only) */}
         {showResetWindow && (

@@ -22,10 +22,16 @@ export function RefinanceTab({ t, profile }: RefinanceTabProps) {
 
   const selectedTracks = profile.tracks.filter((t) => selectedTrackIds.includes(t.track_id));
 
-  // Calculate switching costs
-  const totalPenalty = selectedTracks.reduce((sum, t) => sum + t.early_exit_penalty, 0);
+  // Calculate switching costs — the interest-gap penalty (Amlat Pe'arei Ribit)
+  // plus the fixed operational fee (Amlat Hotza'ot Tipuliyot) plus the notice
+  // fee (Amlat Hoda'a Mukdamet) plus any other user-entered fees.
+  const totalPenalty = selectedTracks.reduce(
+    (sum, t) => sum + t.amlat_pearei_ribit + (t.operational_fee ?? 60),
+    0
+  );
   const totalNoticeFees = selectedTracks.reduce((sum, t) => sum + t.notice_fee, 0);
   const totalSwitchingCosts = totalPenalty + totalNoticeFees + otherFees;
+
 
   // Calculate old blended payment
   const oldBlendedPayment = selectedTracks.reduce((sum, t) => sum + effectiveMonthlyPayment(t), 0);

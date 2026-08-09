@@ -21,13 +21,15 @@ function makeTrack(overrides: Partial<Track> = {}): Track {
     remaining_term_months: 120,
     monthly_repayment: 1000,
     is_payment_manual_override: false,
-    early_exit_penalty: 0,
+    amlat_pearei_ribit: 0,
     notice_fee: 0,
+    operational_fee: 60,
     months_to_reset: null,
     is_cpi_linked: false,
     ...overrides,
   };
 }
+
 
 function makeProfile(overrides: Partial<Profile> = {}): Profile {
   return {
@@ -164,16 +166,28 @@ describe("validateTrack", () => {
     });
   });
 
-  it("rejects negative early_exit_penalty", () => {
-    const track = makeTrack({ early_exit_penalty: -500 });
+  it("rejects negative amlat_pearei_ribit", () => {
+    const track = makeTrack({ amlat_pearei_ribit: -500 });
     const result = validateTrack(track);
     expect(result.isValid).toBe(false);
     expect(result.errors).toContainEqual({
-      field: "early_exit_penalty",
-      message: "Early exit penalty cannot be negative",
+      field: "amlat_pearei_ribit",
+      message: "Interest gap penalty cannot be negative",
       trackId: "test-id",
     });
   });
+
+  it("rejects negative operational_fee", () => {
+    const track = makeTrack({ operational_fee: -10 });
+    const result = validateTrack(track);
+    expect(result.isValid).toBe(false);
+    expect(result.errors).toContainEqual({
+      field: "operational_fee",
+      message: "Operational fee cannot be negative",
+      trackId: "test-id",
+    });
+  });
+
 
   it("rejects negative notice_fee", () => {
     const track = makeTrack({ notice_fee: -100 });

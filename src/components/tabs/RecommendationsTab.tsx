@@ -56,8 +56,9 @@ export function RecommendationsTab({ t, profile }: RecommendationsTabProps) {
 
   const getPenaltyExposure = (track: typeof profile.tracks[0]) => {
     if (track.principal_balance === 0) return 0;
-    return (track.early_exit_penalty / track.principal_balance) * 100;
+    return (track.amlat_pearei_ribit / track.principal_balance) * 100;
   };
+
 
   return (
     <div className="p-6 space-y-6">

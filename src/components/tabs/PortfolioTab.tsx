@@ -163,8 +163,9 @@ export function PortfolioTab({ t, profile }: PortfolioTabProps) {
                       {track.months_to_reset !== null ? `${track.months_to_reset} ${t.common.months}` : '—'}
                     </td>
                     <td className="py-2 px-3 text-right font-mono text-text-secondary">
-                      {formatCurrency(track.early_exit_penalty)}
+                      {formatCurrency(track.amlat_pearei_ribit)}
                     </td>
+
                   </tr>
                 );
               })}

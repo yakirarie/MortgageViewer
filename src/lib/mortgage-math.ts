@@ -560,6 +560,64 @@ export function fixedTrackGapPenalty({
   return penalty;
 }
 
+/**
+ * Clamp a rate to 6 decimal places to eliminate floating-point precision
+ * artifacts (e.g. 0.049800000000000004 → 0.0498). Used when serializing rates
+ * to JSON so exported files are clean and round-trip stable.
+ */
+export function clampRate(rate: number): number {
+  if (!Number.isFinite(rate)) return 0;
+  return Number(rate.toFixed(6));
+}
+
+/**
+ * The total early-exit cost (Amlat Piraon Mukdam) for a track, broken into its
+ * distinct line items per Bank of Israel terminology:
+ *
+ *   total_exit_cost = amlat_pearei_ribit + notice_fee + operational_fee
+ *
+ * where `operational_fee` is the fixed ₪60 operational fee (Amlat Hotza'ot
+ * Tipuliyot). The interest-gap penalty (Amlat Pe'arei Ribit) is 0 for Prime
+ * tracks and computed from the BoI market-rate gap for fixed/variable tracks.
+ */
+export function totalExitCost(track: Track): number {
+  const operationalFee = track.operational_fee ?? 60;
+  return track.amlat_pearei_ribit + track.notice_fee + operationalFee;
+}
+
+/**
+ * Compute the interest-gap penalty (Amlat Pe'arei Ribit) for a track.
+ *
+ * - PRIME tracks: hardcoded to 0 (Prime follows the BoI base rate, so there is
+ *   no interest gap to compensate the bank on early payoff).
+ * - FIXED / VARIABLE tracks: the present value of the monthly interest-rate
+ *   differential (loan rate − BoI average rate) over the remaining term, via
+ *   `fixedTrackGapPenalty`.
+ *
+ * `boiAverageRate` is the average BoI base rate over the remaining term
+ * (decimal). When omitted, the gap is computed against the current BoI base
+ * rate. Returns the raw (unclamped) penalty so callers can round as needed.
+ */
+export function computeAmlatPeareiRibit(
+  track: Track,
+  boiAverageRate?: number
+): number {
+  if (track.track_type === "PRIME") return 0;
+
+  const balance = track.principal_balance;
+  const remaining = track.remaining_term_months;
+  if (balance <= 0 || remaining <= 0) return 0;
+
+  const avgRate = boiAverageRate ?? 0;
+  return fixedTrackGapPenalty({
+    netPrincipalBalance: balance,
+    currentRate: track.annual_interest_rate,
+    boiAverageRate: avgRate,
+    remainingMonths: remaining,
+  });
+}
+
+
 
 
 
@@ -763,11 +821,15 @@ export function netPayoffBenefit({
   }
 
   const interestSaved = interestBefore - interestAfter;
-  const penaltyPaid = L > 0 ? track.early_exit_penalty : 0;
+  // The interest-gap penalty (Amlat Pe'arei Ribit) plus the fixed operational
+  // fee (Amlat Hotza'ot Tipuliyot) are always due on early payoff. The notice
+  // fee (Amlat Hoda'a Mukdamet) is separate and can be waived with advance notice.
+  const penaltyPaid = L > 0 ? track.amlat_pearei_ribit + (track.operational_fee ?? 60) : 0;
   const noticeFeePaid = noticeWaived || L === 0 ? 0 : track.notice_fee;
   const netPayoffBenefit = interestSaved - penaltyPaid - noticeFeePaid;
 
   return { interestSaved, penaltyPaid, noticeFeePaid, netPayoffBenefit };
+
 }
 
 export interface AllocationSuggestion {
@@ -905,10 +967,11 @@ export function recommendActionForTrack(
   referenceMarketRate: number
 ): TrackRecommendation {
   const penaltyRatio =
-    track.principal_balance > 0 ? track.early_exit_penalty / track.principal_balance : 0;
+    track.principal_balance > 0 ? track.amlat_pearei_ribit / track.principal_balance : 0;
 
   // Rule 1: clearly above-average rate, no exit penalty
-  if (track.annual_interest_rate > weightedRate + 0.005 && track.early_exit_penalty === 0) {
+  if (track.annual_interest_rate > weightedRate + 0.005 && track.amlat_pearei_ribit === 0) {
+
     return {
       track_id: track.track_id,
       action: "PAY_OFF_NOW",
@@ -970,9 +1033,10 @@ export function recommendActionsForPortfolio(
 /** Priority score for sorting the Tab 4 action list, per PRD §4.5. Higher = act sooner. */
 export function actionPriorityScore(track: Track, weightedRate: number): number {
   const penaltyRatio =
-    track.principal_balance > 0 ? track.early_exit_penalty / track.principal_balance : 0;
+    track.principal_balance > 0 ? track.amlat_pearei_ribit / track.principal_balance : 0;
   return (track.annual_interest_rate - weightedRate) - penaltyRatio * 10;
 }
+
 
 export function rankTracksByPriority(tracks: Track[]): Track[] {
   const weightedRate = weightedAverageRate(tracks);

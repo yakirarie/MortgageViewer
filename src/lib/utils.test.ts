@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import type { Track } from "./types";
 import {
   generateId,
   formatCurrency,
@@ -9,7 +10,9 @@ import {
   downloadJson,
   uploadJson,
   getCurrentTimestamp,
+  serializeTrackForExport,
 } from "./utils";
+
 
 describe("generateId", () => {
   it("generates a unique ID each time", () => {
@@ -204,3 +207,78 @@ describe("getCurrentTimestamp", () => {
     expect(timestampDate.getTime()).toBeLessThanOrEqual(after.getTime());
   });
 });
+
+describe("serializeTrackForExport", () => {
+  const makeTrack = (overrides: Partial<Track> = {}): Track => ({
+    track_id: "track-1",
+    custom_name: "Prime",
+    track_type: "PRIME",
+    principal_balance: 480000,
+    annual_interest_rate: 0.055,
+    remaining_term_months: 220,
+    monthly_repayment: 0,
+    is_payment_manual_override: false,
+    amlat_pearei_ribit: 0,
+    notice_fee: 0,
+    operational_fee: 60,
+    months_to_reset: null,
+    is_cpi_linked: false,
+    ...overrides,
+  });
+
+  it("separates net principal, accrued interest, and total payoff balance", () => {
+    const serialized = serializeTrackForExport(makeTrack({ principal_balance: 480000 }));
+    expect(serialized.net_principal_balance).toBe(480000);
+    expect(serialized.accrued_daily_interest).toBe(0);
+    expect(serialized.total_payoff_balance).toBe(480000);
+  });
+
+  it("clamps rates to 6 decimal places", () => {
+    const serialized = serializeTrackForExport(
+      makeTrack({ annual_interest_rate: 0.0551234567 })
+    );
+    expect(serialized.annual_interest_rate).toBeCloseTo(0.055123, 6);
+  });
+
+  it("clamps rate_history entry rates to 6 decimal places", () => {
+    const serialized = serializeTrackForExport(
+      makeTrack({
+        rate_history: [
+          { effective_date: "2023-01-05", annual_interest_rate: 0.0391234567 },
+        ],
+      })
+    );
+    expect(serialized.rate_history?.[0].annual_interest_rate).toBeCloseTo(0.039123, 6);
+  });
+
+  it("computes total_exit_cost from the fee line items", () => {
+    const serialized = serializeTrackForExport(
+      makeTrack({ amlat_pearei_ribit: 20000, notice_fee: 720, operational_fee: 60 })
+    );
+    expect(serialized.total_exit_cost).toBe(20000 + 720 + 60);
+  });
+
+  it("defaults the operational fee to 60 when not set", () => {
+    const serialized = serializeTrackForExport(
+      makeTrack({ operational_fee: undefined as any })
+    );
+    expect(serialized.operational_fee).toBe(60);
+  });
+
+  it("preserves Prime-specific fields (start_date, prime_margin, rate_history)", () => {
+    const serialized = serializeTrackForExport(
+      makeTrack({
+        start_date: "2023-01-05",
+        prime_margin: -0.006,
+        rate_history: [
+          { effective_date: "2023-01-05", annual_interest_rate: 0.039 },
+          { effective_date: "2023-02-23", annual_interest_rate: 0.044 },
+        ],
+      })
+    );
+    expect(serialized.start_date).toBe("2023-01-05");
+    expect(serialized.prime_margin).toBe(-0.006);
+    expect(serialized.rate_history).toHaveLength(2);
+  });
+});
+

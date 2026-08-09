@@ -18,11 +18,13 @@ export function createDemoProfile(): Profile {
       remaining_term_months: 220,
       monthly_repayment: 0, // Will be auto-calculated
       is_payment_manual_override: false,
-      early_exit_penalty: 0,
+      amlat_pearei_ribit: 0,
       notice_fee: 720,
+      operational_fee: 60,
       months_to_reset: null,
       is_cpi_linked: false,
       start_date: '2023-01-05',
+
       first_payout_date: '2023-02-05',
       prime_margin: -0.006,
       original_principal: 500000,
@@ -40,11 +42,13 @@ export function createDemoProfile(): Profile {
       remaining_term_months: 180,
       monthly_repayment: 0, // Will be auto-calculated
       is_payment_manual_override: false,
-      early_exit_penalty: 0,
+      amlat_pearei_ribit: 0,
       notice_fee: 525,
+      operational_fee: 60,
       months_to_reset: null,
       is_cpi_linked: false,
     },
+
     {
       track_id: generateId(),
       custom_name: 'Fixed CPI-Linked',
@@ -54,11 +58,13 @@ export function createDemoProfile(): Profile {
       remaining_term_months: 260,
       monthly_repayment: 0, // Will be auto-calculated
       is_payment_manual_override: false,
-      early_exit_penalty: 0,
+      amlat_pearei_ribit: 0,
       notice_fee: 330,
+      operational_fee: 60,
       months_to_reset: null,
       is_cpi_linked: true,
     },
+
     {
       track_id: generateId(),
       custom_name: 'Variable 5Y',
@@ -68,9 +74,11 @@ export function createDemoProfile(): Profile {
       remaining_term_months: 190,
       monthly_repayment: 0, // Will be auto-calculated
       is_payment_manual_override: false,
-      early_exit_penalty: 0,
+      amlat_pearei_ribit: 0,
       notice_fee: 225,
+      operational_fee: 60,
       months_to_reset: 25, // Derived: 5 years after start (13.09.2023) on the 10th → 10.09.2028
+
       is_cpi_linked: false,
       start_date: '2023-09-13',
       first_payout_date: '2023-10-10',
@@ -114,12 +122,14 @@ export function createDefaultTrack(trackType: string = 'PRIME'): Track {
     remaining_term_months: 240,
     monthly_repayment: 0,
     is_payment_manual_override: false,
-    early_exit_penalty: 0,
+    amlat_pearei_ribit: 0,
     notice_fee: 0,
+    operational_fee: 60,
     months_to_reset: null,
     is_cpi_linked: false,
   };
 }
+
 
 export function duplicateTrack(track: Track): Track {
   return {
