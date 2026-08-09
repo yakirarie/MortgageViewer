@@ -193,10 +193,13 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
 
 
 
-  const displayBalance = derived ? derived.currentBalance : track.principal_balance;
+  const displayNetPrincipal = derived ? derived.netPrincipalBalance : track.principal_balance;
+  const displayAccruedInterest = derived ? derived.accruedDailyInterest : 0;
+  const displayTotalPayoff = derived ? derived.totalPayoffBalance : track.principal_balance;
   const displayTerm = derived ? derived.remainingTermMonths : track.remaining_term_months;
   const displayPayment = derived ? derived.currentMonthlyPayment : track.monthly_repayment;
   const displayTermYears = Math.round(displayTerm / 12);
+
 
 
 
@@ -568,15 +571,45 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
           </span>
         </h4>
 
-        {/* Current Balance */}
+        {/* Net Principal Balance */}
         <div>
           <label className="block text-sm font-medium text-text-secondary mb-1">
-            Current Balance (₪)
+            Net Principal Balance (₪)
+            <span className="text-accent-info ml-1 cursor-help" title="The amortized principal owed today, before accrued daily interest.">
+              (?)
+            </span>
           </label>
           <div className="w-full bg-bg-surface border border-border-subtle rounded px-3 py-2 text-text-primary font-mono text-right font-tabular-nums opacity-80">
-            {formatCurrency(displayBalance)}
+            {formatCurrency(displayNetPrincipal)}
           </div>
         </div>
+
+        {/* Accrued Interest */}
+        <div className="mt-3">
+          <label className="block text-sm font-medium text-text-secondary mb-1">
+            Accrued Interest (₪)
+            <span className="text-accent-info ml-1 cursor-help" title="Interest accrued daily since the last payment date (ריבית צבורה).">
+              (?)
+            </span>
+          </label>
+          <div className="w-full bg-bg-surface border border-border-subtle rounded px-3 py-2 text-text-primary font-mono text-right font-tabular-nums opacity-80">
+            +{formatCurrency(displayAccruedInterest)}
+          </div>
+        </div>
+
+        {/* Total Estimated Payoff */}
+        <div className="mt-3">
+          <label className="block text-sm font-medium text-text-secondary mb-1">
+            Total Estimated Payoff (₪)
+            <span className="text-accent-info ml-1 cursor-help" title="Net principal + accrued interest. This is the figure a bank quotes as the payoff amount.">
+              (?)
+            </span>
+          </label>
+          <div className="w-full bg-bg-surface border border-border-subtle rounded px-3 py-2 text-text-primary font-mono text-right font-tabular-nums opacity-80">
+            {formatCurrency(displayTotalPayoff)}
+          </div>
+        </div>
+
 
         {/* Remaining Term */}
         <div className="mt-3">
@@ -642,11 +675,12 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
                 // Estimate penalty using simplified formula from PRD
                 const estimatedPenalty = Math.max(
                   0,
-                  displayBalance *
+                  displayTotalPayoff *
                     Math.max(0, track.annual_interest_rate - 0.043) *
                     (displayTerm / 12) *
                     0.6
                 );
+
                 onUpdate({ early_exit_penalty: estimatedPenalty });
               }}
               className="px-3 py-2 bg-bg-surface-raised border border-border-subtle rounded text-text-secondary hover:text-text-primary text-sm"
@@ -689,8 +723,9 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
             <button
               type="button"
               onClick={() => {
-                onUpdate({ notice_fee: displayBalance * 0.0015 });
+                onUpdate({ notice_fee: displayTotalPayoff * 0.0015 });
               }}
+
               className="px-3 py-2 bg-bg-surface-raised border border-border-subtle rounded text-text-secondary hover:text-text-primary text-sm"
               title="Recalculate as 0.15% of balance"
             >

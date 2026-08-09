@@ -787,7 +787,48 @@ describe("simulateFixedAmortization", () => {
     expect(fromPayout.accruedInterest).toBeGreaterThanOrEqual(0);
     expect(fromPayout.currentBalance).toBeGreaterThanOrEqual(fromPayout.netPrincipalBalance);
   });
+
+  it("anchors the calculation to an explicit as-of date (bank-statement reconciliation)", () => {
+    // Klatz spec: 800k @ 4.9%, 360 months, started 13.09.2023, first payout
+    // 10.10.2023. As of 2026-08-08 the loan has 34 elapsed months and a net
+    // principal of ≈ ₪764,365.28. The as-of date makes the result deterministic
+    // so it can be reconciled against a bank statement.
+    const result = simulateFixedAmortization(
+      800000,
+      "2023-09-13",
+      360,
+      0.049,
+      "2023-10-10",
+      "2026-08-08"
+    );
+
+    expect(result.monthsElapsed).toBe(34);
+    expect(result.remainingTermMonths).toBe(326);
+    expect(result.netPrincipalBalance).toBeCloseTo(764365.28, 0);
+
+    // The three balance fields are distinct and consistent:
+    // totalPayoffBalance = netPrincipalBalance + accruedDailyInterest.
+    expect(result.accruedDailyInterest).toBeGreaterThan(0);
+    expect(result.totalPayoffBalance).toBeCloseTo(
+      result.netPrincipalBalance + result.accruedDailyInterest,
+      5
+    );
+    // Backward-compat aliases mirror the primary fields.
+    expect(result.currentBalance).toBeCloseTo(result.totalPayoffBalance, 5);
+    expect(result.accruedInterest).toBeCloseTo(result.accruedDailyInterest, 5);
+  });
+
+  it("defaults the as-of date to today when none is provided", () => {
+    const start = new Date();
+    start.setMonth(start.getMonth() - 12);
+    const startDate = start.toISOString().slice(0, 10);
+
+    const result = simulateFixedAmortization(500000, startDate, 360, 0.05);
+    expect(result.monthsElapsed).toBe(12);
+    expect(result.remainingTermMonths).toBe(348);
+  });
 });
+
 
 describe("fixedTrackGapPenalty", () => {
   it("returns 0 when the loan rate is at or below the BoI average rate", () => {

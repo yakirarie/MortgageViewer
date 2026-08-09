@@ -159,30 +159,32 @@ export function monthsBetween(from: Date, to: Date): number {
 
 
 export interface PrimeAmortizationResult {
-  /**
-   * Total payoff balance today = net principal balance + accrued daily interest
-   * since the last payment date. This is the figure a bank quotes as the
-   * "current balance" / payoff amount.
-   */
-  currentBalance: number;
   /** Net principal balance today (before accrued daily interest). */
   netPrincipalBalance: number;
   /** Accrued daily interest since the last payment date (ריבית צבורה). */
-  accruedInterest: number;
+  accruedDailyInterest: number;
+  /** Total payoff balance = net principal + accrued daily interest. */
+  totalPayoffBalance: number;
   /** The monthly payment currently in effect (recomputed at each rate change). */
   currentMonthlyPayment: number;
   /** Months remaining on the loan today. */
   remainingTermMonths: number;
   /** Number of months elapsed since the start date (clamped to the term). */
   monthsElapsed: number;
+  /** Alias for `totalPayoffBalance` (backward compatibility). */
+  currentBalance: number;
+  /** Alias for `accruedDailyInterest` (backward compatibility). */
+  accruedInterest: number;
 }
 
 
 /**
- * Simulate a Prime track's amortization from its start date to today, applying
- * the historical rate timeline. The monthly payment is recomputed via the Spitzer
- * formula whenever the effective rate changes, so the result reflects the actual
- * rate history. Returns the current balance, current payment, and remaining term.
+ * Simulate a Prime track's amortization from its start date to an as-of date
+ * (defaults to today), applying the historical rate timeline. The monthly payment
+ * is recomputed via the Spitzer formula whenever the effective rate changes, so
+ * the result reflects the actual rate history. Returns the net principal balance,
+ * accrued daily interest, total payoff balance, current payment, and remaining
+ * term.
  *
  * Falls back to the original principal / original term when there is no start
  * date or rate history (nothing to simulate).
@@ -192,13 +194,18 @@ export function simulatePrimeAmortization(
   startDate: string,
   originalTermMonths: number,
   rateHistory: RateHistoryEntry[],
-  firstPayoutDate?: string
+  firstPayoutDate?: string,
+  asOfDate?: string | Date
 ): PrimeAmortizationResult {
+  const asOf = asOfDate ? new Date(asOfDate) : new Date();
+
   if (!startDate || originalTermMonths <= 0) {
     return {
       currentBalance: originalPrincipal,
       netPrincipalBalance: originalPrincipal,
+      accruedDailyInterest: 0,
       accruedInterest: 0,
+      totalPayoffBalance: originalPrincipal,
       currentMonthlyPayment: 0,
       remainingTermMonths: originalTermMonths,
       monthsElapsed: 0,
@@ -210,7 +217,9 @@ export function simulatePrimeAmortization(
     return {
       currentBalance: originalPrincipal,
       netPrincipalBalance: originalPrincipal,
+      accruedDailyInterest: 0,
       accruedInterest: 0,
+      totalPayoffBalance: originalPrincipal,
       currentMonthlyPayment: 0,
       remainingTermMonths: originalTermMonths,
       monthsElapsed: 0,
@@ -223,7 +232,8 @@ export function simulatePrimeAmortization(
   // made and the remaining term. The first payout date is *not* used to shift
   // this count — it only determines the monthly payment day-of-month, which is
   // used to compute accrued daily interest since the last payment.
-  const elapsed = Math.min(monthsBetween(new Date(startDate), new Date()), originalTermMonths);
+  const elapsed = Math.min(monthsBetween(new Date(startDate), asOf), originalTermMonths);
+
 
   // Amortize the net principal forward, recomputing the Spitzer payment at each
   // BoI rate change.
@@ -260,57 +270,62 @@ export function simulatePrimeAmortization(
   // Accrued daily interest (ריבית צבורה) since the last payment date. The last
   // payment is due on the monthly payment day-of-month (from the first payout
   // date, falling back to the start date) in the most recent month. The bank
-  // accrues interest daily at R/365 from the last payment date to today.
+  // accrues interest daily at R/365 from the last payment date to the as-of date.
   const paymentDay = firstPayoutDate
     ? new Date(firstPayoutDate).getDate()
     : new Date(startDate).getDate();
-  const today = new Date();
-  const lastPaymentDate = new Date(today.getFullYear(), today.getMonth(), paymentDay);
-  if (lastPaymentDate.getTime() > today.getTime()) {
-    // Today is before this month's payment day → last payment was last month.
+  const lastPaymentDate = new Date(asOf.getFullYear(), asOf.getMonth(), paymentDay);
+  if (lastPaymentDate.getTime() > asOf.getTime()) {
+    // The as-of date is before this month's payment day → last payment was last month.
     lastPaymentDate.setMonth(lastPaymentDate.getMonth() - 1);
   }
-  const accruedDays = Math.max(0, (today.getTime() - lastPaymentDate.getTime()) / 86400000);
-  const accruedInterest =
+  const accruedDays = Math.max(0, (asOf.getTime() - lastPaymentDate.getTime()) / 86400000);
+  const accruedDailyInterest =
     netPrincipal > 0 ? netPrincipal * (latestRate / 365) * accruedDays : 0;
 
+  const totalPayoffBalance = netPrincipal + accruedDailyInterest;
+
   return {
-    currentBalance: netPrincipal + accruedInterest,
+    currentBalance: totalPayoffBalance,
     netPrincipalBalance: netPrincipal,
-    accruedInterest,
+    accruedDailyInterest,
+    accruedInterest: accruedDailyInterest,
+    totalPayoffBalance,
     currentMonthlyPayment,
     remainingTermMonths: monthsLeft,
     monthsElapsed: elapsed,
   };
 }
 
+
 export interface FixedAmortizationResult {
-  /**
-   * Total payoff balance today = net principal balance + accrued daily interest
-   * since the last payment date. This is the figure a bank quotes as the
-   * "current balance" / payoff amount.
-   */
-  currentBalance: number;
   /** Net principal balance today (before accrued daily interest). */
   netPrincipalBalance: number;
   /** Accrued daily interest since the last payment date (ריבית צבורה). */
-  accruedInterest: number;
+  accruedDailyInterest: number;
+  /** Total payoff balance = net principal + accrued daily interest. */
+  totalPayoffBalance: number;
   /** The monthly payment currently in effect (fixed — never changes). */
   currentMonthlyPayment: number;
   /** Months remaining on the loan today. */
   remainingTermMonths: number;
   /** Number of months elapsed since the start date (clamped to the term). */
   monthsElapsed: number;
+  /** Alias for `totalPayoffBalance` (backward compatibility). */
+  currentBalance: number;
+  /** Alias for `accruedDailyInterest` (backward compatibility). */
+  accruedInterest: number;
 }
 
 /**
  * Simulate a Fixed Unlinked (Klatz) track's amortization from its start date to
- * today. Unlike Prime tracks, the rate is completely immutable — it never
- * changes over the life of the loan. The monthly payment is therefore constant
- * (computed once via the Spitzer formula at origination) and the balance simply
- * amortizes down month by month.
+ * an as-of date (defaults to today). Unlike Prime tracks, the rate is completely
+ * immutable — it never changes over the life of the loan. The monthly payment is
+ * therefore constant (computed once via the Spitzer formula at origination) and
+ * the balance simply amortizes down month by month.
  *
- * Returns the current balance, current payment, and remaining term.
+ * Returns the net principal balance, accrued daily interest, total payoff
+ * balance, current payment, and remaining term.
  *
  * Falls back to the original principal / original term when there is no start
  * date (nothing to simulate).
@@ -320,13 +335,18 @@ export function simulateFixedAmortization(
   startDate: string,
   originalTermMonths: number,
   annualRate: number,
-  firstPayoutDate?: string
+  firstPayoutDate?: string,
+  asOfDate?: string | Date
 ): FixedAmortizationResult {
+  const asOf = asOfDate ? new Date(asOfDate) : new Date();
+
   if (originalTermMonths <= 0) {
     return {
       currentBalance: originalPrincipal,
       netPrincipalBalance: originalPrincipal,
+      accruedDailyInterest: 0,
       accruedInterest: 0,
+      totalPayoffBalance: originalPrincipal,
       currentMonthlyPayment: 0,
       remainingTermMonths: originalTermMonths,
       monthsElapsed: 0,
@@ -342,7 +362,9 @@ export function simulateFixedAmortization(
     return {
       currentBalance: originalPrincipal,
       netPrincipalBalance: originalPrincipal,
+      accruedDailyInterest: 0,
       accruedInterest: 0,
+      totalPayoffBalance: originalPrincipal,
       currentMonthlyPayment: payment,
       remainingTermMonths: originalTermMonths,
       monthsElapsed: 0,
@@ -355,7 +377,9 @@ export function simulateFixedAmortization(
     return {
       currentBalance: originalPrincipal,
       netPrincipalBalance: originalPrincipal,
+      accruedDailyInterest: 0,
       accruedInterest: 0,
+      totalPayoffBalance: originalPrincipal,
       currentMonthlyPayment: payment,
       remainingTermMonths: originalTermMonths,
       monthsElapsed: 0,
@@ -365,7 +389,8 @@ export function simulateFixedAmortization(
 
   // The amortization clock starts at the loan's start date (same convention as
   // the Prime track — the bank counts full months since the loan was taken out).
-  const elapsed = Math.min(monthsBetween(new Date(startDate), new Date()), originalTermMonths);
+  const elapsed = Math.min(monthsBetween(new Date(startDate), asOf), originalTermMonths);
+
 
   // Fixed rate → the payment is constant. Compute it once at origination.
   let netPrincipal = originalPrincipal;
@@ -391,29 +416,34 @@ export function simulateFixedAmortization(
 
   // Accrued daily interest (ריבית צבורה) since the last payment date. The last
   // payment is due on the monthly payment day-of-month (from the first payout
-  // date, falling back to the start date) in the most recent month.
+  // date, falling back to the start date) in the most recent month. The bank
+  // accrues interest daily at R/365 from the last payment date to the as-of date.
   const paymentDay = firstPayoutDate
     ? new Date(firstPayoutDate).getDate()
     : new Date(startDate).getDate();
-  const today = new Date();
-  const lastPaymentDate = new Date(today.getFullYear(), today.getMonth(), paymentDay);
-  if (lastPaymentDate.getTime() > today.getTime()) {
-    // Today is before this month's payment day → last payment was last month.
+  const lastPaymentDate = new Date(asOf.getFullYear(), asOf.getMonth(), paymentDay);
+  if (lastPaymentDate.getTime() > asOf.getTime()) {
+    // The as-of date is before this month's payment day → last payment was last month.
     lastPaymentDate.setMonth(lastPaymentDate.getMonth() - 1);
   }
-  const accruedDays = Math.max(0, (today.getTime() - lastPaymentDate.getTime()) / 86400000);
-  const accruedInterest =
+  const accruedDays = Math.max(0, (asOf.getTime() - lastPaymentDate.getTime()) / 86400000);
+  const accruedDailyInterest =
     netPrincipal > 0 ? netPrincipal * (annualRate / 365) * accruedDays : 0;
 
+  const totalPayoffBalance = netPrincipal + accruedDailyInterest;
+
   return {
-    currentBalance: netPrincipal + accruedInterest,
+    currentBalance: totalPayoffBalance,
     netPrincipalBalance: netPrincipal,
-    accruedInterest,
+    accruedDailyInterest,
+    accruedInterest: accruedDailyInterest,
+    totalPayoffBalance,
     currentMonthlyPayment,
     remainingTermMonths: monthsLeft,
     monthsElapsed: elapsed,
   };
 }
+
 
 export interface FixedGapPenaltyInput {
   /** Net principal balance today (₪). */
