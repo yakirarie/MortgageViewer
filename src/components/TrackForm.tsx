@@ -7,7 +7,14 @@ import { shouldShowResetWindow, getDefaultCpiLinked, getDefaultRate } from '../l
 import { TRACK_TYPES } from '../lib/validation';
 import { populatePrimeRateHistory, getPrimeBaseRateAt, primeEffectiveRate, getMarketRates } from '../lib/rates-api';
 
-import { simulatePrimeAmortization, simulateFixedAmortization, monthsBetween } from '../lib/mortgage-math';
+import {
+  simulatePrimeAmortization,
+  simulateFixedAmortization,
+  nextResetDate,
+  monthsToNextReset,
+} from '../lib/mortgage-math';
+
+
 
 
 
@@ -37,10 +44,14 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
       track_type: newType as any,
       annual_interest_rate: getDefaultRate(newType as any, getMarketRates().prime_rate_current),
       is_cpi_linked: getDefaultCpiLinked(newType as any),
-      months_to_reset: shouldShowResetWindow(newType as any) ? 60 : null,
+      // The reset window is derived automatically from the start date + first
+      // payout date (5 years after start, on the payment day). It is never
+      // entered manually, so clear it here and let applyAmortization recompute it.
+      months_to_reset: null,
     };
     onUpdate(updates);
   };
+
 
 
   const showResetWindow = shouldShowResetWindow(track.track_type);
@@ -80,17 +91,22 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
   /**
    * The original term in months. When a track was imported without an explicit
    * `original_term_months` (older profiles only stored `remaining_term_months`),
-   * derive it as `remaining_term_months + months elapsed since the start date`.
+   * treat `remaining_term_months` as the committed full term. The amortization
+   * engine then derives the true remaining term as `originalTerm − elapsed`, so
+   * a track configured with a 360-month term and 34 months elapsed correctly
+   * shows 326 months remaining (rather than double-counting the elapsed months
+   * on top of an already-full term).
    */
   const getEffectiveOriginalTerm = (): number => {
     if (track.original_term_months && track.original_term_months > 0) {
       return track.original_term_months;
     }
-    if (track.start_date && track.remaining_term_months && track.remaining_term_months > 0) {
-      return track.remaining_term_months + monthsBetween(new Date(track.start_date), new Date());
+    if (track.remaining_term_months && track.remaining_term_months > 0) {
+      return track.remaining_term_months;
     }
     return 0;
   };
+
 
   const applyAmortization = (updates: Partial<Track>): Partial<Track> => {
     const originalPrincipal =
@@ -155,8 +171,17 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
         updates.is_payment_manual_override = false;
       }
     }
+
+    // Derive the reset window automatically for Variable 5Y tracks. The rate
+    // renegotiates every 5 years from the start date, on the monthly payment
+    // day-of-month (from the first payout date). It is never entered manually.
+    if (showResetWindow) {
+      updates.months_to_reset = monthsToNextReset(startDate || '', firstPayoutDate);
+    }
+
     return updates;
   };
+
 
 
 
@@ -211,6 +236,13 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
   const displayTerm = derived ? derived.remainingTermMonths : track.remaining_term_months;
   const displayPayment = derived ? derived.currentMonthlyPayment : track.monthly_repayment;
   const displayTermYears = Math.round(displayTerm / 12);
+
+  // Derived next-reset date for Variable 5Y tracks (5 years after start, on the
+  // monthly payment day). Shown read-only — it is never entered manually.
+  const nextReset = showResetWindow
+    ? nextResetDate(track.start_date || '', track.first_payout_date)
+    : null;
+
 
 
 
@@ -749,25 +781,26 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
           )}
         </div>
 
-        {/* Reset Window (conditional) */}
+        {/* Next Reset (derived, read-only) */}
         {showResetWindow && (
           <div className="mt-3">
             <label className="block text-sm font-medium text-text-secondary mb-1">
-              Months to Reset
+              Next Rate Reset
+              <span className="text-accent-info ml-1 cursor-help" title="Derived automatically: 5 years after the start date, on the monthly payment day (from the first payout date).">
+                (?)
+              </span>
             </label>
-            <input
-              type="number"
-              value={track.months_to_reset || ''}
-              onChange={(e) => onUpdate({ months_to_reset: e.target.value ? parseInt(e.target.value) : null })}
-              className={`w-full bg-bg-surface border rounded px-3 py-2 text-text-primary focus:outline-none font-mono text-right font-tabular-nums ${
-                getFieldError('months_to_reset') ? 'border-accent-danger' : 'border-border-subtle focus:border-accent-info'
-              }`}
-            />
-            {getFieldError('months_to_reset') && (
-              <p className="text-accent-danger text-xs mt-1">{getFieldError('months_to_reset')}</p>
-            )}
+            <div className="w-full bg-bg-surface border border-border-subtle rounded px-3 py-2 text-text-primary font-mono text-right font-tabular-nums opacity-80">
+              {nextReset
+                ? `${nextReset.toLocaleDateString('en-GB')} (${track.months_to_reset ?? '—'} months)`
+                : '—'}
+            </div>
+            <p className="text-text-secondary text-xs mt-1">
+              The rate renegotiates every 5 years from the start date, on the payment day.
+            </p>
           </div>
         )}
+
 
         {/* CPI Linked */}
         <div className="mt-3 flex items-center gap-2">

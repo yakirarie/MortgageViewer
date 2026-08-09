@@ -22,7 +22,10 @@ import {
   simulatePrimeAmortization,
   simulateFixedAmortization,
   fixedTrackGapPenalty,
+  nextResetDate,
+  monthsToNextReset,
 } from "./mortgage-math";
+
 
 
 
@@ -1042,6 +1045,57 @@ describe("fixedTrackGapPenalty", () => {
     expect(defaultDiscount).toBeCloseTo(explicitDiscount, 5);
   });
 });
+
+// ---------------------------------------------------------------------------
+// §4.1c Variable 5Y Reset Window (derived, never entered manually)
+// ---------------------------------------------------------------------------
+
+describe("nextResetDate", () => {
+  it("returns 5 years after the start date on the payment day-of-month", () => {
+    // Started 13.09.2023, first payout 10.10.2023 → payment day = 10th.
+    // Reset = 10.09.2028.
+    const reset = nextResetDate("2023-09-13", "2023-10-10");
+    expect(reset).not.toBeNull();
+    expect(reset!.getFullYear()).toBe(2028);
+    expect(reset!.getMonth()).toBe(8); // September (0-indexed)
+    expect(reset!.getDate()).toBe(10);
+  });
+
+  it("falls back to the start date's day-of-month when there is no first payout date", () => {
+    // Started 13.09.2023, no payout date → payment day = 13th. Reset = 13.09.2028.
+    const reset = nextResetDate("2023-09-13");
+    expect(reset).not.toBeNull();
+    expect(reset!.getFullYear()).toBe(2028);
+    expect(reset!.getMonth()).toBe(8);
+    expect(reset!.getDate()).toBe(13);
+  });
+
+  it("returns null for an empty or invalid start date", () => {
+    expect(nextResetDate("")).toBeNull();
+    expect(nextResetDate("not-a-date")).toBeNull();
+  });
+});
+
+describe("monthsToNextReset", () => {
+  it("matches the hand-computed months until reset for the demo Variable 5Y track", () => {
+    // Started 13.09.2023, first payout 10.10.2023 → reset 10.09.2028. As of
+    // 09.08.2026 (day 9 < payment day 10) that is 25 whole months away.
+    const months = monthsToNextReset("2023-09-13", "2023-10-10", "2026-08-09");
+    expect(months).toBe(25);
+  });
+
+  it("counts a full month when the as-of day is on/after the reset day", () => {
+    // As of 10.08.2026 (day 10 >= reset day 10) the reset is 25 months away
+    // (Aug 2026 → Sep 2028 = 25 months, day 10 >= day 10 → no adjustment).
+    const months = monthsToNextReset("2023-09-13", "2023-10-10", "2026-08-10");
+    expect(months).toBe(25);
+  });
+
+  it("returns null when there is no start date to derive from", () => {
+    expect(monthsToNextReset("", "2023-10-10")).toBeNull();
+  });
+});
+
 
 
 

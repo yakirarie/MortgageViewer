@@ -93,8 +93,10 @@ describe("createDemoProfile", () => {
     expect(variable5y?.annual_interest_rate).toBe(0.044);
     expect(variable5y?.remaining_term_months).toBe(190);
     expect(variable5y?.is_cpi_linked).toBe(false);
-    expect(variable5y?.months_to_reset).toBe(34);
+    // Derived: 5 years after start (13.09.2023) on the 10th → 10.09.2028.
+    expect(variable5y?.months_to_reset).toBe(25);
   });
+
 
   it("generates unique track IDs for each track", () => {
     const profile = createDemoProfile();

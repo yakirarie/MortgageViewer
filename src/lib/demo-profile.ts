@@ -70,9 +70,18 @@ export function createDemoProfile(): Profile {
       is_payment_manual_override: false,
       early_exit_penalty: 0,
       notice_fee: 225,
-      months_to_reset: 34,
+      months_to_reset: 25, // Derived: 5 years after start (13.09.2023) on the 10th → 10.09.2028
       is_cpi_linked: false,
+      start_date: '2023-09-13',
+      first_payout_date: '2023-10-10',
+      // Original term = 190 remaining + 34 elapsed (started 13.09.2023). With
+      // this set, the amortization engine derives the true remaining term as
+      // 224 − 34 = 190 months.
+      original_principal: 150000,
+      original_term_months: 224,
     },
+
+
   ];
 
   return {

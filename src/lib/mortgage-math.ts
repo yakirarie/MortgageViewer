@@ -156,6 +156,43 @@ export function monthsBetween(from: Date, to: Date): number {
   return Math.max(0, months);
 }
 
+/**
+ * The next rate-reset date for a Variable 5Y track. The rate renegotiates every
+ * 5 years from the loan's start date, on the monthly payment day-of-month (from
+ * the first payout date, falling back to the start date's day). E.g. a loan
+ * started 13.09.2023 with a first payout on the 10th resets on 10.09.2028.
+ * Returns null when there is no (valid) start date.
+ */
+export function nextResetDate(
+  startDate: string,
+  firstPayoutDate?: string
+): Date | null {
+  if (!startDate) return null;
+  const start = new Date(startDate);
+  if (isNaN(start.getTime())) return null;
+  const paymentDay = firstPayoutDate
+    ? new Date(firstPayoutDate).getDate()
+    : start.getDate();
+  return new Date(start.getFullYear() + 5, start.getMonth(), paymentDay);
+}
+
+/**
+ * Whole months until the next rate reset for a Variable 5Y track, as of a given
+ * date (defaults to today). Returns null when there is no start date to derive
+ * from.
+ */
+export function monthsToNextReset(
+  startDate: string,
+  firstPayoutDate?: string,
+  asOfDate?: string | Date
+): number | null {
+  const reset = nextResetDate(startDate, firstPayoutDate);
+  if (!reset) return null;
+  const asOf = asOfDate ? new Date(asOfDate) : new Date();
+  return monthsBetween(asOf, reset);
+}
+
+
 
 
 export interface PrimeAmortizationResult {
