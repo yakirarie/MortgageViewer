@@ -45,7 +45,7 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
 
   const showResetWindow = shouldShowResetWindow(track.track_type);
   const isPrime = track.track_type === 'PRIME';
-  const isFixed = track.track_type === 'FIXED_UNLINKED';
+
 
 
   // Local string state so the user can type freely (including '-' and '.')
@@ -120,28 +120,33 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
       originalPrincipal > 0 &&
       originalTerm > 0
     ) {
-      if (isFixed) {
-        // Fixed Unlinked (Klatz): the rate is immutable, so the amortization is
-        // a plain Spitzer schedule with a constant rate. Runs even without a
-        // start date (elapsed = 0 → balance = original, payment = Spitzer at
-        // the original principal over the full term).
+      if (isPrime) {
+        // Prime: amortize along the historical BoI rate timeline.
+        if (startDate && history.length > 0) {
+          const result = simulatePrimeAmortization(
+            originalPrincipal,
+            startDate,
+            originalTerm,
+            history,
+            firstPayoutDate
+          );
+          updates.principal_balance = result.currentBalance;
+          updates.remaining_term_months = result.remainingTermMonths;
+          updates.monthly_repayment = result.currentMonthlyPayment;
+          updates.is_payment_manual_override = false;
+        }
+      } else {
+        // All non-Prime tracks (FIXED_UNLINKED, VARIABLE_5Y, FIXED_LINKED,
+        // OTHER) amortize at the current block's constant rate over the elapsed
+        // months. Runs even without a start date (elapsed = 0 → balance =
+        // original, payment = Spitzer at the original principal over the full
+        // term). This prevents a Variable 5Y track from falling back to a fresh
+        // 360-month loan when it has a start date but no rate history.
         const result = simulateFixedAmortization(
           originalPrincipal,
           startDate || '',
           originalTerm,
           annualRate,
-          firstPayoutDate
-        );
-        updates.principal_balance = result.currentBalance;
-        updates.remaining_term_months = result.remainingTermMonths;
-        updates.monthly_repayment = result.currentMonthlyPayment;
-        updates.is_payment_manual_override = false;
-      } else if (startDate && history.length > 0) {
-        const result = simulatePrimeAmortization(
-          originalPrincipal,
-          startDate,
-          originalTerm,
-          history,
           firstPayoutDate
         );
         updates.principal_balance = result.currentBalance;
@@ -155,6 +160,7 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
 
 
 
+
   // Derived values for the read-only "Auto-Calculated" section.
   const derived = (() => {
     const history = buildRateHistory();
@@ -164,10 +170,25 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
       track.original_principal > 0 &&
       originalTerm > 0
     ) {
-      if (isFixed) {
-        // Fixed tracks compute even without a start date (elapsed = 0 → balance
-        // = original, payment = Spitzer at the original principal over the full
-        // term). Once a start date is set, the balance/term amortize down.
+      if (isPrime) {
+        // Prime: amortize along the historical BoI rate timeline (needs a start
+        // date + rate history).
+        if (track.start_date && history.length > 0) {
+          return simulatePrimeAmortization(
+            track.original_principal,
+            track.start_date,
+            originalTerm,
+            history,
+            track.first_payout_date
+          );
+        }
+      } else {
+        // All non-Prime tracks (FIXED_UNLINKED, VARIABLE_5Y, FIXED_LINKED,
+        // OTHER) amortize at the current block's constant rate over the elapsed
+        // months. Runs even without a start date (elapsed = 0 → balance =
+        // original, payment = Spitzer at the original principal over the full
+        // term). This prevents a Variable 5Y track from falling back to a fresh
+        // 360-month loan when it has a start date but no rate history.
         return simulateFixedAmortization(
           track.original_principal,
           track.start_date || '',
@@ -176,19 +197,10 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
           track.first_payout_date
         );
       }
-      // Prime and other tracks still need a start date + rate history.
-      if (track.start_date && history.length > 0) {
-        return simulatePrimeAmortization(
-          track.original_principal,
-          track.start_date,
-          originalTerm,
-          history,
-          track.first_payout_date
-        );
-      }
     }
     return null;
   })();
+
 
 
 

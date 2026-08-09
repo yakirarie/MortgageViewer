@@ -906,7 +906,43 @@ describe("simulateFixedAmortization", () => {
     expect(result.totalPayoffBalance).toBeCloseTo(result.netPrincipalBalance, 5);
   });
 
+  it("amortizes a Variable 5Y track at its current block rate (400k @ 4.98%, 34 elapsed)", () => {
+    // Variable 5Y benchmark: original 400,000 @ 4.98% (current block), 360-month
+    // term, started 13.09.2023, first payout 10.10.2023 (payment day 10th). As
+    // of 2026-08-09 (day 9 < payment day 10) exactly 34 months have elapsed.
+    // The track amortizes at the constant current-block rate over the elapsed
+    // months — it must NOT fall back to a fresh 360-month loan.
+    const result = simulateFixedAmortization(
+      400000,
+      "2023-09-13",
+      360,
+      0.0498,
+      "2023-10-10",
+      "2026-08-09"
+    );
+
+    // 1. Monthly payout = Spitzer over 360 months on 400,000 at 4.98%.
+    expect(result.currentMonthlyPayment).toBeCloseTo(2142.4, 1);
+
+    // 2. Net principal after 34 payments (monthly-compounding annuity balance).
+    expect(result.netPrincipalBalance).toBeCloseTo(382423.95, 0);
+
+    // 3. Remaining term = 360 − 34 = 326 months (27 years).
+    expect(result.monthsElapsed).toBe(34);
+    expect(result.remainingTermMonths).toBe(326);
+
+    // 4. Accrued interest over 30 whole calendar days (last payment 2026-07-10).
+    const dailyRate = result.netPrincipalBalance * (0.0498 / 365);
+    expect(dailyRate).toBeCloseTo(52.177, 2);
+    expect(result.accruedDailyInterest).toBeCloseTo(1565.32, 0);
+
+    // 5. Total estimated payoff = net principal + accrued interest.
+    expect(result.totalPayoffBalance).toBeCloseTo(383989.27, 0);
+  });
+
+
 });
+
 
 
 
