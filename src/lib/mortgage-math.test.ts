@@ -548,14 +548,23 @@ describe("simulatePrimeAmortization", () => {
   });
 
   it("amortizes a constant-rate loan correctly over the elapsed months", () => {
-    // Start 12 months ago at a constant 5% rate, 360-month term.
-    const start = new Date();
+    // Start 12 months before the as-of date at a constant 5% rate, 360-month
+    // term. The as-of date (day 9) is before the payment day (15th), so exactly
+    // 12 full months have elapsed.
+    const asOf = "2026-08-09";
+    const start = new Date(asOf);
     start.setMonth(start.getMonth() - 12);
+    start.setDate(5); // day 5 <= asOf day 9 → 12 full months
     const startDate = start.toISOString().slice(0, 10);
 
-    const result = simulatePrimeAmortization(500000, startDate, 360, [
-      { effective_date: startDate, annual_interest_rate: 0.05 },
-    ]);
+    const result = simulatePrimeAmortization(
+      500000,
+      startDate,
+      360,
+      [{ effective_date: startDate, annual_interest_rate: 0.05 }],
+      "2025-09-15", // payment day 15 > asOf day 9 → no payment this month
+      asOf
+    );
 
     // 12 months elapsed, 348 remaining.
     expect(result.monthsElapsed).toBe(12);
@@ -573,19 +582,29 @@ describe("simulatePrimeAmortization", () => {
   });
 
   it("applies rate changes over time (payment recomputed at each change)", () => {
-    // Start 24 months ago. Rate is 4% for the first 12 months, then 6%.
-    const start = new Date();
+    // Start 24 months before the as-of date. Rate is 4% for the first 12 months,
+    // then 6%. The as-of date (day 9) is before the payment day (15th).
+    const asOf = "2026-08-09";
+    const start = new Date(asOf);
     start.setMonth(start.getMonth() - 24);
+    start.setDate(5);
     const startDate = start.toISOString().slice(0, 10);
 
     const rateChangeDate = new Date(start);
     rateChangeDate.setMonth(rateChangeDate.getMonth() + 12);
     const rateChangeIso = rateChangeDate.toISOString().slice(0, 10);
 
-    const result = simulatePrimeAmortization(500000, startDate, 360, [
-      { effective_date: startDate, annual_interest_rate: 0.04 },
-      { effective_date: rateChangeIso, annual_interest_rate: 0.06 },
-    ]);
+    const result = simulatePrimeAmortization(
+      500000,
+      startDate,
+      360,
+      [
+        { effective_date: startDate, annual_interest_rate: 0.04 },
+        { effective_date: rateChangeIso, annual_interest_rate: 0.06 },
+      ],
+      "2024-09-15", // payment day 15 > asOf day 9 → no payment this month
+      asOf
+    );
 
     expect(result.monthsElapsed).toBe(24);
     expect(result.remainingTermMonths).toBe(336);
@@ -595,6 +614,7 @@ describe("simulatePrimeAmortization", () => {
     const paymentAt4 = spitzerMonthlyPayment(500000, 0.04, 360);
     expect(result.currentMonthlyPayment).toBeGreaterThan(paymentAt4);
   });
+
 
   it("clamps elapsed months to the original term", () => {
     // Start 400 months ago (beyond a 360-month term) — the loan should be fully paid.
@@ -713,11 +733,16 @@ describe("simulateFixedAmortization", () => {
   it("matches the hand-computed Klatz spec values (800k @ 4.9%, 360m, 34 elapsed)", () => {
     // Spec: Original 800,000 @ 4.90%, 360 months, 34 months elapsed.
     // Expected: PMT ≈ 4,245.81, net principal ≈ 764,365, remaining 326.
-    const start = new Date();
-    start.setMonth(start.getMonth() - 34);
-    const startDate = start.toISOString().slice(0, 10);
-
-    const result = simulateFixedAmortization(800000, startDate, 360, 0.049);
+    // Started 13.09.2023, first payout 10.10.2023 (payment day 10th). As of
+    // 2026-08-09 (day 9 < payment day 10) exactly 34 months have elapsed.
+    const result = simulateFixedAmortization(
+      800000,
+      "2023-09-13",
+      360,
+      0.049,
+      "2023-10-10",
+      "2026-08-09"
+    );
 
     expect(result.monthsElapsed).toBe(34);
     expect(result.remainingTermMonths).toBe(326);
@@ -736,6 +761,7 @@ describe("simulateFixedAmortization", () => {
     expect(result.currentBalance).toBeGreaterThanOrEqual(result.netPrincipalBalance);
     expect(result.accruedInterest).toBeGreaterThanOrEqual(0);
   });
+
 
   it("produces a constant payment that never changes (immutable rate)", () => {
     const start = new Date();
@@ -819,15 +845,69 @@ describe("simulateFixedAmortization", () => {
   });
 
   it("defaults the as-of date to today when none is provided", () => {
+    // Start 12 months ago (same day-of-month as today). Because the payment day
+    // falls back to the start date's day-of-month, and today is on/after that
+    // day, the current month's payment is counted → 13 elapsed months.
     const start = new Date();
     start.setMonth(start.getMonth() - 12);
     const startDate = start.toISOString().slice(0, 10);
 
     const result = simulateFixedAmortization(500000, startDate, 360, 0.05);
-    expect(result.monthsElapsed).toBe(12);
-    expect(result.remainingTermMonths).toBe(348);
+    expect(result.monthsElapsed).toBe(13);
+    expect(result.remainingTermMonths).toBe(347);
   });
+
+
+  it("counts whole calendar days for accrued interest (2026-08-09 benchmark)", () => {
+    // Klatz spec: 800k @ 4.9%, 360 months, started 13.09.2023, first payout
+    // 10.10.2023 (payment day = 10th). As of 2026-08-09 (day 9 < payment day 10)
+    // the last payment was 2026-07-10 → exactly 30 whole calendar days elapsed.
+    const result = simulateFixedAmortization(
+      800000,
+      "2023-09-13",
+      360,
+      0.049,
+      "2023-10-10",
+      "2026-08-09"
+    );
+
+    // 34 elapsed months (Aug 10 hasn't happened yet), net principal unchanged.
+    expect(result.monthsElapsed).toBe(34);
+    expect(result.netPrincipalBalance).toBeCloseTo(764365.28, 0);
+
+    // Daily rate = B × (R/365) ≈ ₪102.6103/day.
+    const dailyRate = result.netPrincipalBalance * (0.049 / 365);
+    expect(dailyRate).toBeCloseTo(102.6103, 2);
+
+    // 30 whole calendar days → accrued interest = 30 × 102.6103 ≈ ₪3,078.31.
+    expect(result.accruedDailyInterest).toBeCloseTo(3078.31, 0);
+
+    // Total payoff = net principal + accrued interest ≈ ₪767,443.59.
+    expect(result.totalPayoffBalance).toBeCloseTo(767443.59, 0);
+  });
+
+  it("resets accrued interest and increments elapsed months on the payment day (2026-08-10)", () => {
+    // On the payment day (Aug 10) the monthly payment is made: elapsed months
+    // increments to 35, accrued interest resets to 0, and the net principal is
+    // amortized down to ≈ ₪763,245 (the exact figure depends on payment rounding).
+    const result = simulateFixedAmortization(
+      800000,
+      "2023-09-13",
+      360,
+      0.049,
+      "2023-10-10",
+      "2026-08-10"
+    );
+
+    expect(result.monthsElapsed).toBe(35);
+    expect(result.remainingTermMonths).toBe(325);
+    expect(result.netPrincipalBalance).toBeCloseTo(763245, -1);
+    expect(result.accruedDailyInterest).toBe(0);
+    expect(result.totalPayoffBalance).toBeCloseTo(result.netPrincipalBalance, 5);
+  });
+
 });
+
 
 
 describe("fixedTrackGapPenalty", () => {

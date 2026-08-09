@@ -229,10 +229,18 @@ export function simulatePrimeAmortization(
   // The amortization clock starts at the loan's start date. The bank counts the
   // number of full months since the loan was taken out (e.g. 34/360 for a loan
   // started 13.09.2023), which is what determines how many payments have been
-  // made and the remaining term. The first payout date is *not* used to shift
-  // this count — it only determines the monthly payment day-of-month, which is
-  // used to compute accrued daily interest since the last payment.
-  const elapsed = Math.min(monthsBetween(new Date(startDate), asOf), originalTermMonths);
+  // made and the remaining term. The monthly payment day-of-month comes from the
+  // first payout date (falling back to the start date). When the as-of date is
+  // on/after the payment day, this month's payment has already been made, so we
+  // count it as an elapsed month and reset the accrued-interest clock to zero.
+  const paymentDay = firstPayoutDate
+    ? new Date(firstPayoutDate).getDate()
+    : new Date(startDate).getDate();
+  const paymentMadeThisMonth = asOf.getDate() >= paymentDay;
+
+  let elapsed = monthsBetween(new Date(startDate), asOf);
+  if (paymentMadeThisMonth) elapsed += 1;
+  elapsed = Math.min(elapsed, originalTermMonths);
 
 
   // Amortize the net principal forward, recomputing the Spitzer payment at each
@@ -270,18 +278,23 @@ export function simulatePrimeAmortization(
   // Accrued daily interest (ריבית צבורה) since the last payment date. The last
   // payment is due on the monthly payment day-of-month (from the first payout
   // date, falling back to the start date) in the most recent month. The bank
-  // accrues interest daily at R/365 from the last payment date to the as-of date.
-  const paymentDay = firstPayoutDate
-    ? new Date(firstPayoutDate).getDate()
-    : new Date(startDate).getDate();
+  // accrues interest daily at R/365 from the last payment date to the as-of date,
+  // counting *whole calendar days* (no fractional-day drift).
   const lastPaymentDate = new Date(asOf.getFullYear(), asOf.getMonth(), paymentDay);
-  if (lastPaymentDate.getTime() > asOf.getTime()) {
+  if (!paymentMadeThisMonth) {
     // The as-of date is before this month's payment day → last payment was last month.
     lastPaymentDate.setMonth(lastPaymentDate.getMonth() - 1);
   }
-  const accruedDays = Math.max(0, (asOf.getTime() - lastPaymentDate.getTime()) / 86400000);
+  // Truncate both dates to midnight and floor the difference to whole days.
+  const lastPaymentMidnight = new Date(lastPaymentDate.setHours(0, 0, 0, 0));
+  const asOfMidnight = new Date(asOf.getFullYear(), asOf.getMonth(), asOf.getDate());
+  const accruedDays = Math.max(
+    0,
+    Math.floor((asOfMidnight.getTime() - lastPaymentMidnight.getTime()) / 86400000)
+  );
   const accruedDailyInterest =
     netPrincipal > 0 ? netPrincipal * (latestRate / 365) * accruedDays : 0;
+
 
   const totalPayoffBalance = netPrincipal + accruedDailyInterest;
 
@@ -389,7 +402,18 @@ export function simulateFixedAmortization(
 
   // The amortization clock starts at the loan's start date (same convention as
   // the Prime track — the bank counts full months since the loan was taken out).
-  const elapsed = Math.min(monthsBetween(new Date(startDate), asOf), originalTermMonths);
+  // The monthly payment day-of-month comes from the first payout date (falling
+  // back to the start date). When the as-of date is on/after the payment day,
+  // this month's payment has already been made, so we count it as an elapsed
+  // month and reset the accrued-interest clock to zero.
+  const paymentDay = firstPayoutDate
+    ? new Date(firstPayoutDate).getDate()
+    : new Date(startDate).getDate();
+  const paymentMadeThisMonth = asOf.getDate() >= paymentDay;
+
+  let elapsed = monthsBetween(new Date(startDate), asOf);
+  if (paymentMadeThisMonth) elapsed += 1;
+  elapsed = Math.min(elapsed, originalTermMonths);
 
 
   // Fixed rate → the payment is constant. Compute it once at origination.
@@ -417,18 +441,23 @@ export function simulateFixedAmortization(
   // Accrued daily interest (ריבית צבורה) since the last payment date. The last
   // payment is due on the monthly payment day-of-month (from the first payout
   // date, falling back to the start date) in the most recent month. The bank
-  // accrues interest daily at R/365 from the last payment date to the as-of date.
-  const paymentDay = firstPayoutDate
-    ? new Date(firstPayoutDate).getDate()
-    : new Date(startDate).getDate();
+  // accrues interest daily at R/365 from the last payment date to the as-of date,
+  // counting *whole calendar days* (no fractional-day drift).
   const lastPaymentDate = new Date(asOf.getFullYear(), asOf.getMonth(), paymentDay);
-  if (lastPaymentDate.getTime() > asOf.getTime()) {
+  if (!paymentMadeThisMonth) {
     // The as-of date is before this month's payment day → last payment was last month.
     lastPaymentDate.setMonth(lastPaymentDate.getMonth() - 1);
   }
-  const accruedDays = Math.max(0, (asOf.getTime() - lastPaymentDate.getTime()) / 86400000);
+  // Truncate both dates to midnight and floor the difference to whole days.
+  const lastPaymentMidnight = new Date(lastPaymentDate.setHours(0, 0, 0, 0));
+  const asOfMidnight = new Date(asOf.getFullYear(), asOf.getMonth(), asOf.getDate());
+  const accruedDays = Math.max(
+    0,
+    Math.floor((asOfMidnight.getTime() - lastPaymentMidnight.getTime()) / 86400000)
+  );
   const accruedDailyInterest =
     netPrincipal > 0 ? netPrincipal * (annualRate / 365) * accruedDays : 0;
+
 
   const totalPayoffBalance = netPrincipal + accruedDailyInterest;
 
