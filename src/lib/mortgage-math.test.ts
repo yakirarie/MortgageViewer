@@ -685,19 +685,30 @@ describe("simulatePrimeAmortization", () => {
 // ---------------------------------------------------------------------------
 
 describe("simulateFixedAmortization", () => {
-  it("falls back to the original principal/term when there is no start date", () => {
+  it("computes the payment at the original principal over the full term when there is no start date", () => {
     const result = simulateFixedAmortization(800000, "", 360, 0.049);
     expect(result.currentBalance).toBe(800000);
     expect(result.remainingTermMonths).toBe(360);
     expect(result.monthsElapsed).toBe(0);
-    expect(result.currentMonthlyPayment).toBe(0);
+    // No start date → elapsed = 0, but the payment is still computed at the
+    // original principal over the full term (so the form shows a meaningful
+    // value before the user enters a start date).
+    expect(result.currentMonthlyPayment).toBeCloseTo(
+      spitzerMonthlyPayment(800000, 0.049, 360),
+      1
+    );
   });
 
-  it("falls back when the start date is invalid", () => {
+  it("computes the payment when the start date is invalid", () => {
     const result = simulateFixedAmortization(800000, "not-a-date", 360, 0.049);
     expect(result.currentBalance).toBe(800000);
     expect(result.remainingTermMonths).toBe(360);
+    expect(result.currentMonthlyPayment).toBeCloseTo(
+      spitzerMonthlyPayment(800000, 0.049, 360),
+      1
+    );
   });
+
 
   it("matches the hand-computed Klatz spec values (800k @ 4.9%, 360m, 34 elapsed)", () => {
     // Spec: Original 800,000 @ 4.90%, 360 months, 34 months elapsed.

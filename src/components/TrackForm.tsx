@@ -118,16 +118,16 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
     if (
       originalPrincipal !== undefined &&
       originalPrincipal > 0 &&
-      originalTerm > 0 &&
-      startDate &&
-      history.length > 0
+      originalTerm > 0
     ) {
       if (isFixed) {
         // Fixed Unlinked (Klatz): the rate is immutable, so the amortization is
-        // a plain Spitzer schedule with a constant rate.
+        // a plain Spitzer schedule with a constant rate. Runs even without a
+        // start date (elapsed = 0 → balance = original, payment = Spitzer at
+        // the original principal over the full term).
         const result = simulateFixedAmortization(
           originalPrincipal,
-          startDate,
+          startDate || '',
           originalTerm,
           annualRate,
           firstPayoutDate
@@ -136,7 +136,7 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
         updates.remaining_term_months = result.remainingTermMonths;
         updates.monthly_repayment = result.currentMonthlyPayment;
         updates.is_payment_manual_override = false;
-      } else {
+      } else if (startDate && history.length > 0) {
         const result = simulatePrimeAmortization(
           originalPrincipal,
           startDate,
@@ -154,6 +154,7 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
   };
 
 
+
   // Derived values for the read-only "Auto-Calculated" section.
   const derived = (() => {
     const history = buildRateHistory();
@@ -161,29 +162,34 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
     if (
       track.original_principal !== undefined &&
       track.original_principal > 0 &&
-      originalTerm > 0 &&
-      track.start_date &&
-      history.length > 0
+      originalTerm > 0
     ) {
       if (isFixed) {
+        // Fixed tracks compute even without a start date (elapsed = 0 → balance
+        // = original, payment = Spitzer at the original principal over the full
+        // term). Once a start date is set, the balance/term amortize down.
         return simulateFixedAmortization(
           track.original_principal,
-          track.start_date,
+          track.start_date || '',
           originalTerm,
           track.annual_interest_rate,
           track.first_payout_date
         );
       }
-      return simulatePrimeAmortization(
-        track.original_principal,
-        track.start_date,
-        originalTerm,
-        history,
-        track.first_payout_date
-      );
+      // Prime and other tracks still need a start date + rate history.
+      if (track.start_date && history.length > 0) {
+        return simulatePrimeAmortization(
+          track.original_principal,
+          track.start_date,
+          originalTerm,
+          history,
+          track.first_payout_date
+        );
+      }
     }
     return null;
   })();
+
 
 
 

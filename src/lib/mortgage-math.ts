@@ -322,7 +322,7 @@ export function simulateFixedAmortization(
   annualRate: number,
   firstPayoutDate?: string
 ): FixedAmortizationResult {
-  if (!startDate || originalTermMonths <= 0) {
+  if (originalTermMonths <= 0) {
     return {
       currentBalance: originalPrincipal,
       netPrincipalBalance: originalPrincipal,
@@ -333,17 +333,35 @@ export function simulateFixedAmortization(
     };
   }
 
-  const start = new Date(startDate).getTime();
-  if (isNaN(start)) {
+  // No start date (or an invalid one) → no elapsed months, but we can still
+  // compute the payment at the original principal over the full term. This lets
+  // the form show a meaningful current balance / payment even before the user
+  // enters a start date.
+  if (!startDate) {
+    const payment = spitzerMonthlyPayment(originalPrincipal, annualRate, originalTermMonths);
     return {
       currentBalance: originalPrincipal,
       netPrincipalBalance: originalPrincipal,
       accruedInterest: 0,
-      currentMonthlyPayment: 0,
+      currentMonthlyPayment: payment,
       remainingTermMonths: originalTermMonths,
       monthsElapsed: 0,
     };
   }
+
+  const start = new Date(startDate).getTime();
+  if (isNaN(start)) {
+    const payment = spitzerMonthlyPayment(originalPrincipal, annualRate, originalTermMonths);
+    return {
+      currentBalance: originalPrincipal,
+      netPrincipalBalance: originalPrincipal,
+      accruedInterest: 0,
+      currentMonthlyPayment: payment,
+      remainingTermMonths: originalTermMonths,
+      monthsElapsed: 0,
+    };
+  }
+
 
   // The amortization clock starts at the loan's start date (same convention as
   // the Prime track — the bank counts full months since the loan was taken out).
