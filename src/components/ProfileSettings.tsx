@@ -157,19 +157,17 @@ export function ProfileSettings({ profile: initialProfile, onApplyChanges, onClo
   const handleApply = () => {
     onApplyChanges(localProfile);
     setHasUnsavedChanges(false);
-    setImportStatus('success');
-    setImportMessage('Changes applied successfully!');
-    setTimeout(() => {
-      setImportStatus('idle');
-      setImportMessage('');
-    }, 2000);
+    // Applying changes closes the settings window and returns to the home
+    // screen, which now reflects the updated profile.
+    onClose();
   };
+
 
   const handleClose = () => {
     if (hasUnsavedChanges) {
       if (confirm('You have unsaved changes. Apply them before closing?')) {
+        // handleApply applies the changes and closes the window itself.
         handleApply();
-        onClose();
       } else {
         onClose();
       }
@@ -177,6 +175,7 @@ export function ProfileSettings({ profile: initialProfile, onApplyChanges, onClo
       onClose();
     }
   };
+
 
   // Track operations
   const addTrack = (trackType: string = 'PRIME') => {
@@ -415,12 +414,6 @@ export function ProfileSettings({ profile: initialProfile, onApplyChanges, onClo
 
         {/* Footer */}
         <div className="p-4 border-t border-border-subtle flex gap-3">
-          <button
-            onClick={handleClose}
-            className="flex-1 py-3 bg-bg-surface-raised border border-border-subtle rounded text-text-primary hover:border-accent-info font-medium"
-          >
-            Cancel
-          </button>
           {hasUnsavedChanges && (
             <button
               onClick={handleApply}
@@ -430,6 +423,7 @@ export function ProfileSettings({ profile: initialProfile, onApplyChanges, onClo
             </button>
           )}
         </div>
+
       </div>
     </div>
   );
