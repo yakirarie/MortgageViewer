@@ -27,13 +27,10 @@ interface Translations {
     profile: string;
   };
   sidebar: {
-    globalAssumptions: string;
-    referenceMarketRate: string;
-    alternativeInvestmentReturn: string;
-    primeRateCurrent: string;
     profileSummary: string;
     manageTracks: string;
   };
+
   kpi: {
     totalOutstandingBalance: string;
     weightedAvgInterestRate: string;
@@ -85,16 +82,15 @@ interface Translations {
     interestSaved: string;
     penaltyFees: string;
     netBenefit: string;
-    payoffVsInvest: string;
-    totalPayoffBenefit: string;
-    investmentGain: string;
-    verdictPayoffWins: string;
-    verdictInvestWins: string;
-    verdictRoughlyEqual: string;
+    payoffDiagnostics: string;
+    totalPayoffOutlay: string;
+    guaranteedInterestSaved: string;
+    monthlyCashflowRelief: string;
     disclaimer: string;
     disclaimerText: string;
     noticeWaivedNote: string;
   };
+
   refinance: {
     title: string;
     selectTracks: string;
@@ -135,16 +131,13 @@ interface Translations {
     rule3Desc: string;
     rule4: string;
     rule4Desc: string;
-    rule5: string;
-    rule5Desc: string;
     weightedRate: string;
-    marketReference: string;
     payOffNow: string;
     waitForReset: string;
-    considerRefinancing: string;
     hold: string;
     reason: string;
   };
+
   trackForm: {
     trackType: string;
     trackName: string;
@@ -210,13 +203,10 @@ const translations: Record<Language, Translations> = {
       profile: 'Profile:',
     },
     sidebar: {
-      globalAssumptions: 'Global Assumptions',
-      referenceMarketRate: 'Reference Market Rate',
-      alternativeInvestmentReturn: 'Alternative Investment Return',
-      primeRateCurrent: 'Prime Rate Current',
       profileSummary: 'Profile Summary',
       manageTracks: 'Manage Tracks →',
     },
+
     kpi: {
       totalOutstandingBalance: 'Total Outstanding Balance',
       weightedAvgInterestRate: 'Weighted Avg. Interest Rate',
@@ -268,13 +258,12 @@ const translations: Record<Language, Translations> = {
       interestSaved: 'Interest Saved',
       penaltyFees: 'Penalty + Fees',
       netBenefit: 'Net Benefit',
-      payoffVsInvest: 'Payoff vs. Invest Comparison',
-      totalPayoffBenefit: 'Total Payoff Benefit',
-      investmentGain: 'Investment Gain',
-      verdictPayoffWins: 'Paying off mortgage beats investing by',
-      verdictInvestWins: 'Investing beats mortgage payoff by',
-      verdictRoughlyEqual: 'Payoff and investing are roughly equal over this timeframe',
+      payoffDiagnostics: 'Payoff Diagnostics',
+      totalPayoffOutlay: 'Total Payoff Outlay',
+      guaranteedInterestSaved: 'Guaranteed Interest Saved',
+      monthlyCashflowRelief: 'Monthly Cashflow Relief',
       disclaimer: 'Disclaimer:',
+
       disclaimerText: 'Mortgage payoff is a guaranteed, risk-free return. Market investment returns are not guaranteed. This comparison does not account for capital gains tax, or your personal risk tolerance.',
       noticeWaivedNote: 'Notice fee waived — 10-day advance notice rule (Amlat Hoda\'a Mukdamet) applied.',
     },
@@ -314,19 +303,16 @@ const translations: Record<Language, Translations> = {
       rule1Desc: 'Rate > weighted avg + 0.5% AND zero penalty',
       rule2: 'Wait for Reset:',
       rule2Desc: 'Reset window ≤ 6 months',
-      rule3: 'Consider Refinancing:',
-      rule3Desc: 'Rate > market rate + 0.75% AND penalty < 2% of balance',
+      rule3: 'Hold:',
+      rule3Desc: 'Penalty ≥ 5% of balance',
       rule4: 'Hold:',
-      rule4Desc: 'Penalty ≥ 5% of balance',
-      rule5: 'Hold:',
-      rule5Desc: 'Default (no strong signal)',
+      rule4Desc: 'Default (no strong signal)',
       weightedRate: 'Current weighted rate:',
-      marketReference: 'Market reference:',
       payOffNow: 'Pay Off Now',
       waitForReset: 'Wait for Reset',
-      considerRefinancing: 'Consider Refinancing',
       hold: 'Hold',
       reason: 'Reason:',
+
     },
     trackForm: {
       trackType: 'Track Type',
@@ -391,13 +377,10 @@ const translations: Record<Language, Translations> = {
       profile: 'פרופיל:',
     },
     sidebar: {
-      globalAssumptions: 'הנחות גלובליות',
-      referenceMarketRate: 'שיעור שוק ייחוס',
-      alternativeInvestmentReturn: 'תשואת השקעה חלופית',
-      primeRateCurrent: 'שיעור פריים נוכחי',
       profileSummary: 'סיכום פרופיל',
       manageTracks: 'ניהול מסלולים ←',
     },
+
     kpi: {
       totalOutstandingBalance: 'יתרת חוב כוללת',
       weightedAvgInterestRate: 'שיעור ריבית ממוצע משוקלל',
@@ -449,13 +432,12 @@ const translations: Record<Language, Translations> = {
       interestSaved: 'ריבית שנחסכה',
       penaltyFees: 'קנס ועמלות',
       netBenefit: 'תועלת נטו',
-      payoffVsInvest: 'השוואת פרעון מול השקעה',
-      totalPayoffBenefit: 'תועלת פרעון כוללת',
-      investmentGain: 'רווח השקעה',
-      verdictPayoffWins: 'פרעון המשכנתא עדיף על השקעה ב',
-      verdictInvestWins: 'השקעה עדיפה על פרעון משכנתא ב',
-      verdictRoughlyEqual: 'פרעון והשקעה שווים בערך בטווח זה',
+      payoffDiagnostics: 'אבחון פרעון',
+      totalPayoffOutlay: 'הוצאה כוללת לפרעון',
+      guaranteedInterestSaved: 'ריבית מובטחת שנחסכה',
+      monthlyCashflowRelief: 'הקלה בתזרים חודשי',
       disclaimer: 'כתב ויתור:',
+
       disclaimerText: 'פרעון משכנתא הוא תשואה מובטחת ללא סיכון. תשואות השקעה בשוק אינן מובטחות. השוואה זו אינה לוקחת בחשבון מס הכנסות הון, את סיבולת הסיכון האישית שלך.',
       noticeWaivedNote: 'עמלת הודעה מבוטלת — חוק הודעה מוקדמת (עמלת הודעה מוקדמת) הוחל.',
     },
@@ -495,19 +477,16 @@ const translations: Record<Language, Translations> = {
       rule1Desc: 'שיעור > ממוצד + 0.5% ואין קנס',
       rule2: 'המתן לאיפוס:',
       rule2Desc: 'חלון איפוס ≤ 6 חודשים',
-      rule3: 'שקול מיחזור:',
-      rule3Desc: 'שיעור > שיעור שוק + 0.75% וקנס < 2% מהיתרה',
+      rule3: 'החזק:',
+      rule3Desc: 'קנס ≥ 5% מהיתרה',
       rule4: 'החזק:',
-      rule4Desc: 'קנס ≥ 5% מהיתרה',
-      rule5: 'החזק:',
-      rule5Desc: 'ברירת מחדל (ללא אות חזק)',
+      rule4Desc: 'ברירת מחדל (ללא אות חזק)',
       weightedRate: 'שיעור ממוצד נוכחי:',
-      marketReference: 'ייחוס שוק:',
       payOffNow: 'פרעון מוקדם',
       waitForReset: 'המתן לאיפוס',
-      considerRefinancing: 'שקול מיחזור',
       hold: 'החזק',
       reason: 'סיבה:',
+
     },
     trackForm: {
       trackType: 'סוג מסלול',

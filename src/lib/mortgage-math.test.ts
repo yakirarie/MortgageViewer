@@ -9,13 +9,12 @@ import {
   portfolioTotals,
   monthsToPayoff,
   netPayoffBenefit,
+  payoffDiagnostics,
   suggestOptimalAllocation,
-  investmentFutureValue,
-  investmentNetGain,
-  comparePayoffVsInvest,
   refinancingBreakeven,
   recommendActionForTrack,
   rankTracksByPriority,
+
   currentEffectiveRate,
   effectiveRateForMonth,
   spitzerMonthlyPaymentWithHistory,
@@ -286,38 +285,97 @@ describe("suggestOptimalAllocation", () => {
 });
 
 // ---------------------------------------------------------------------------
-// §4.3 Alternative Opportunity Cost
+// §4.3 Payoff Diagnostics (deterministic debt-savings metrics)
 // ---------------------------------------------------------------------------
 
-describe("investmentFutureValue / investmentNetGain", () => {
-  it("matches the hand-computed compound growth value", () => {
-    expect(investmentFutureValue(50000, 0.08, 24)).toBeCloseTo(58644.4, 0);
-    expect(investmentNetGain(50000, 0.08, 24)).toBeCloseTo(8644.4, 0);
+describe("payoffDiagnostics", () => {
+  it("computes the total payoff outlay as the full balance plus exit costs", () => {
+    const track = makeTrack({
+      principal_balance: 480000,
+      annual_interest_rate: 0.055,
+      remaining_term_months: 220,
+      amlat_pearei_ribit: 20000,
+      notice_fee: 720,
+      operational_fee: 60,
+    });
+    const d = payoffDiagnostics({ track, lumpSum: 480000 });
+    // Full payoff: outlay = balance + penalty + notice + operational fee.
+    expect(d.totalPayoffOutlay).toBeCloseTo(480000 + 20000 + 720 + 60, 0);
   });
 
-  it("returns 0 for a non-positive lump sum", () => {
-    expect(investmentFutureValue(0, 0.08, 24)).toBe(0);
-    expect(investmentFutureValue(-100, 0.08, 24)).toBe(0);
-  });
-});
-
-describe("comparePayoffVsInvest", () => {
-  it("declares payoff the winner when NPB clearly exceeds investment gain", () => {
-    expect(comparePayoffVsInvest(50000, 10000, 100000)).toBe("PAYOFF_WINS");
-  });
-
-  it("declares investing the winner when investment gain clearly exceeds NPB", () => {
-    expect(comparePayoffVsInvest(5000, 20000, 100000)).toBe("INVEST_WINS");
+  it("guaranteed interest saved equals the remaining interest on a full payoff", () => {
+    const track = makeTrack({
+      principal_balance: 480000,
+      annual_interest_rate: 0.055,
+      remaining_term_months: 220,
+    });
+    const d = payoffDiagnostics({ track, lumpSum: 480000 });
+    expect(d.guaranteedInterestSaved).toBeCloseTo(remainingInterestForTrack(track), 0);
   });
 
-  it("calls it roughly equal within the 1% band", () => {
-    expect(comparePayoffVsInvest(10000, 10050, 100000)).toBe("ROUGHLY_EQUAL");
+  it("monthly cashflow relief equals the current monthly payment on a full payoff (reduce_payment)", () => {
+    const track = makeTrack({
+      principal_balance: 480000,
+      annual_interest_rate: 0.055,
+      remaining_term_months: 220,
+    });
+    const d = payoffDiagnostics({ track, lumpSum: 480000, mode: "reduce_payment" });
+    expect(d.monthlyCashflowRelief).toBeCloseTo(spitzerMonthlyPayment(480000, 0.055, 220), 1);
+  });
+
+
+  it("penalty payback horizon is 0 when there is no monthly cashflow relief (reduce_term mode)", () => {
+    const track = makeTrack({
+      principal_balance: 480000,
+      annual_interest_rate: 0.055,
+      remaining_term_months: 220,
+      amlat_pearei_ribit: 20000,
+      notice_fee: 720,
+      operational_fee: 60,
+    });
+    // Default mode is reduce_term → the payment is unchanged, so there is no
+    // monthly relief to recover the exit fees against.
+    const d = payoffDiagnostics({ track, lumpSum: 480000 });
+    expect(d.penaltyPaybackHorizon).toBe(0);
+  });
+
+  it("penalty payback horizon is the months of cashflow relief needed to cover exit costs (reduce_payment)", () => {
+    const track = makeTrack({
+      principal_balance: 480000,
+      annual_interest_rate: 0.055,
+      remaining_term_months: 220,
+      amlat_pearei_ribit: 20000,
+      notice_fee: 720,
+      operational_fee: 60,
+    });
+    const d = payoffDiagnostics({
+      track,
+      lumpSum: 480000,
+      mode: "reduce_payment",
+    });
+    // Exit costs = 20000 + 720 + 60 = 20780. Monthly relief = the Spitzer payment.
+    const monthly = spitzerMonthlyPayment(480000, 0.055, 220);
+    expect(d.penaltyPaybackHorizon).toBeCloseTo(20780 / monthly, 1);
+  });
+
+
+  it("produces zero diagnostics for a zero lump sum", () => {
+    const track = makeTrack({
+      principal_balance: 480000,
+      annual_interest_rate: 0.055,
+      remaining_term_months: 220,
+    });
+    const d = payoffDiagnostics({ track, lumpSum: 0 });
+    expect(d.totalPayoffOutlay).toBe(0);
+    expect(d.guaranteedInterestSaved).toBe(0);
+    expect(d.monthlyCashflowRelief).toBe(0);
   });
 });
 
 // ---------------------------------------------------------------------------
 // §4.4 Refinancing Breakeven
 // ---------------------------------------------------------------------------
+
 
 describe("refinancingBreakeven", () => {
   it("matches the hand-computed breakeven and lifetime savings", () => {
@@ -360,8 +418,9 @@ describe("recommendActionForTrack", () => {
       principal_balance: 100000,
     });
 
-    const rec = recommendActionForTrack(highRateNoPenalty, weightedRate, 0.043);
+    const rec = recommendActionForTrack(highRateNoPenalty, weightedRate);
     expect(rec.action).toBe("PAY_OFF_NOW");
+
   });
 
   it("recommends WAIT_FOR_RESET when reset is imminent and rule 1 doesn't already match", () => {
@@ -376,8 +435,9 @@ describe("recommendActionForTrack", () => {
       principal_balance: 100000,
     });
 
-    const rec = recommendActionForTrack(nearReset, weightedRate, 0.043);
+    const rec = recommendActionForTrack(nearReset, weightedRate);
     expect(rec.action).toBe("WAIT_FOR_RESET");
+
   });
 
   it("rule 1 (pay off now) preempts rule 2 (reset) when both conditions are met, per strict priority order", () => {
@@ -389,8 +449,9 @@ describe("recommendActionForTrack", () => {
       principal_balance: 100000,
     });
 
-    const rec = recommendActionForTrack(bothMatch, weightedRate, 0.043);
+    const rec = recommendActionForTrack(bothMatch, weightedRate);
     expect(rec.action).toBe("PAY_OFF_NOW");
+
   });
 
   it("recommends HOLD when penalty exposure is high relative to balance", () => {
@@ -401,23 +462,11 @@ describe("recommendActionForTrack", () => {
       amlat_pearei_ribit: 8000, // 8% of balance
     });
 
-    const rec = recommendActionForTrack(highPenalty, weightedRate, 0.043);
+    const rec = recommendActionForTrack(highPenalty, weightedRate);
     expect(rec.action).toBe("HOLD");
   });
-
-  it("recommends CONSIDER_REFINANCING for a large market-rate gap with low penalty", () => {
-    const refiCandidate = makeTrack({
-      track_id: "refi",
-      annual_interest_rate: 0.043 + 0.01, // clearly above reference market rate
-      principal_balance: 100000,
-      amlat_pearei_ribit: 1000, // 1% of balance, under the 2% threshold
-    });
-
-    // Use a low weighted rate so rule 1 (pay off now) doesn't preempt this
-    const rec = recommendActionForTrack(refiCandidate, 0.043 + 0.01, 0.043);
-    expect(rec.action).toBe("CONSIDER_REFINANCING");
-  });
 });
+
 
 describe("rankTracksByPriority", () => {
   it("ranks a high-rate, low-penalty track above a low-rate, high-penalty track", () => {

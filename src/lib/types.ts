@@ -114,8 +114,8 @@ export type PayoffReductionMode = "reduce_term" | "reduce_payment";
 export type RecommendedAction =
   | "PAY_OFF_NOW"
   | "WAIT_FOR_RESET"
-  | "CONSIDER_REFINANCING"
   | "HOLD";
+
 
 export interface TrackRecommendation {
   track_id: string;

@@ -5,7 +5,6 @@ import {
   weightedAverageRate,
 } from '../../lib/mortgage-math';
 import { formatCurrency, formatPercent } from '../../lib/utils';
-import { getMarketRates } from '../../lib/rates-api';
 
 
 interface RecommendationsTabProps {
@@ -15,10 +14,8 @@ interface RecommendationsTabProps {
 
 export function RecommendationsTab({ t, profile }: RecommendationsTabProps) {
 
-  const recommendations = recommendActionsForPortfolio(
-    profile.tracks,
-    getMarketRates().reference_market_rate
-  );
+  const recommendations = recommendActionsForPortfolio(profile.tracks);
+
 
 
   const rankedTracks = rankTracksByPriority(profile.tracks);
@@ -30,8 +27,6 @@ export function RecommendationsTab({ t, profile }: RecommendationsTabProps) {
         return 'bg-accent-primary text-bg-primary';
       case 'WAIT_FOR_RESET':
         return 'bg-accent-warning text-bg-primary';
-      case 'CONSIDER_REFINANCING':
-        return 'bg-accent-info text-bg-primary';
       case 'HOLD':
         return 'bg-track-other text-bg-primary';
       default:
@@ -45,14 +40,13 @@ export function RecommendationsTab({ t, profile }: RecommendationsTabProps) {
         return t.recommendations.payOffNow;
       case 'WAIT_FOR_RESET':
         return t.recommendations.waitForReset;
-      case 'CONSIDER_REFINANCING':
-        return t.recommendations.considerRefinancing;
       case 'HOLD':
         return t.recommendations.hold;
       default:
         return action;
     }
   };
+
 
   const getPenaltyExposure = (track: typeof profile.tracks[0]) => {
     if (track.principal_balance === 0) return 0;
@@ -194,7 +188,7 @@ export function RecommendationsTab({ t, profile }: RecommendationsTabProps) {
             </div>
           </div>
           <div className="flex items-start gap-2">
-            <span className="px-2 py-1 rounded bg-accent-info text-bg-primary text-xs font-medium">3</span>
+            <span className="px-2 py-1 rounded bg-track-other text-bg-primary text-xs font-medium">3</span>
             <div>
               <span className="text-text-primary font-medium">{t.recommendations.rule3}</span>
               <span className="text-text-secondary">
@@ -211,21 +205,12 @@ export function RecommendationsTab({ t, profile }: RecommendationsTabProps) {
               </span>
             </div>
           </div>
-          <div className="flex items-start gap-2">
-            <span className="px-2 py-1 rounded bg-track-other text-bg-primary text-xs font-medium">5</span>
-            <div>
-              <span className="text-text-primary font-medium">{t.recommendations.rule5}</span>
-              <span className="text-text-secondary">
-                {' '}{t.recommendations.rule5Desc}
-              </span>
-            </div>
-          </div>
         </div>
         <div className="mt-4 pt-4 border-t border-border-subtle text-xs text-text-secondary">
-          {t.recommendations.weightedRate} {formatPercent(weightedRate)} | {t.recommendations.marketReference} {formatPercent(getMarketRates().reference_market_rate)}
-
+          {t.recommendations.weightedRate} {formatPercent(weightedRate)}
         </div>
       </div>
+
     </div>
   );
 }

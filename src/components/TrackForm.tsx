@@ -6,7 +6,8 @@ import { formatCurrency, formatCurrencyPrecision, formatPercent, parseCurrencyIn
 
 import { shouldShowResetWindow, getDefaultCpiLinked, getDefaultRate } from '../lib/validation';
 import { TRACK_TYPES } from '../lib/validation';
-import { populatePrimeRateHistory, getPrimeBaseRateAt, primeEffectiveRate, getMarketRates } from '../lib/rates-api';
+import { populatePrimeRateHistory, getPrimeBaseRateAt, primeEffectiveRate, getCurrentBaseRate, PRIME_SPREAD } from '../lib/rates-api';
+
 
 import {
   simulatePrimeAmortization,
@@ -45,7 +46,10 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
   const handleTypeChange = (newType: string) => {
     const updates: Partial<Track> = {
       track_type: newType as any,
-      annual_interest_rate: getDefaultRate(newType as any, getMarketRates().prime_rate_current),
+      // Prime default rate = current BoI base rate + 1.5% spread − 0.5% margin
+      // (derived deterministically from the actual BoI table — no speculative
+      // market assumption).
+      annual_interest_rate: getDefaultRate(newType as any, getCurrentBaseRate() + PRIME_SPREAD),
       is_cpi_linked: getDefaultCpiLinked(newType as any),
       // The reset window is derived automatically from the start date + first
       // payout date (5 years after start, on the payment day). It is never
@@ -54,6 +58,7 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
     };
     onUpdate(updates);
   };
+
 
 
 

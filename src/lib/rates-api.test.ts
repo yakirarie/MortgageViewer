@@ -1,8 +1,6 @@
 import { describe, it, expect } from "vitest";
 
 import {
-  getMarketRates,
-  refreshMarketRates,
   formatLastUpdated,
   getCurrentBaseRate,
   getRatesAsOfDate,
@@ -18,71 +16,9 @@ import {
 
 
 
-describe("getMarketRates", () => {
-  it("returns market rates with correct structure", () => {
-    const rates = getMarketRates();
-
-    expect(rates).toHaveProperty("reference_market_rate");
-    expect(rates).toHaveProperty("alternative_investment_annual_return");
-    expect(rates).toHaveProperty("prime_rate_current");
-    expect(rates).toHaveProperty("last_updated");
-    expect(rates).toHaveProperty("source");
-  });
-
-  it("returns reference_market_rate as a number between 0 and 1", () => {
-    const rates = getMarketRates();
-    expect(rates.reference_market_rate).toBeGreaterThanOrEqual(0);
-    expect(rates.reference_market_rate).toBeLessThanOrEqual(1);
-  });
-
-  it("returns alternative_investment_annual_return as a number between 0 and 1", () => {
-    const rates = getMarketRates();
-    expect(rates.alternative_investment_annual_return).toBeGreaterThanOrEqual(0);
-    expect(rates.alternative_investment_annual_return).toBeLessThanOrEqual(1);
-  });
-
-  it("returns prime_rate_current as a number between 0 and 1", () => {
-    const rates = getMarketRates();
-    expect(rates.prime_rate_current).toBeGreaterThanOrEqual(0);
-    expect(rates.prime_rate_current).toBeLessThanOrEqual(1);
-  });
-
-  it("returns last_updated as a date string", () => {
-    const rates = getMarketRates();
-    expect(rates.last_updated).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-  });
-
-  it("returns source as a string", () => {
-    const rates = getMarketRates();
-    expect(typeof rates.source).toBe("string");
-    expect(rates.source.length).toBeGreaterThan(0);
-  });
-
-  it("returns consistent values across calls", () => {
-    const rates1 = getMarketRates();
-    const rates2 = getMarketRates();
-
-    expect(rates1.reference_market_rate).toBe(rates2.reference_market_rate);
-    expect(rates1.alternative_investment_annual_return).toBe(rates2.alternative_investment_annual_return);
-    expect(rates1.prime_rate_current).toBe(rates2.prime_rate_current);
-    expect(rates1.last_updated).toBe(rates2.last_updated);
-    expect(rates1.source).toBe(rates2.source);
-  });
-
-  it("returns expected values for July 2026", () => {
-    const rates = getMarketRates();
-
-    expect(rates.reference_market_rate).toBe(0.042);
-    expect(rates.alternative_investment_annual_return).toBe(0.06);
-    // Prime = BoI base (3.5%) + 1.5% spread = 5.0%
-    expect(rates.prime_rate_current).toBe(0.05);
-    expect(rates.last_updated).toBe("2026-07-09");
-    expect(rates.source).toBe("Bank of Israel (manually updated)");
-  });
-
-});
 
 describe("BOI_BASE_RATE_HISTORY", () => {
+
   it("is sorted newest → oldest", () => {
     for (let i = 0; i < BOI_BASE_RATE_HISTORY.length - 1; i++) {
       const cur = new Date(BOI_BASE_RATE_HISTORY[i].date).getTime();
@@ -242,45 +178,8 @@ describe("populatePrimeRateHistory", () => {
 });
 
 
-describe("refreshMarketRates", () => {
-  it("returns a promise that resolves to market rates", async () => {
-    const rates = await refreshMarketRates();
-
-    expect(rates).toHaveProperty("reference_market_rate");
-    expect(rates).toHaveProperty("alternative_investment_annual_return");
-    expect(rates).toHaveProperty("prime_rate_current");
-    expect(rates).toHaveProperty("last_updated");
-    expect(rates).toHaveProperty("source");
-  });
-
-  it("returns the same values as getMarketRates", async () => {
-    const staticRates = getMarketRates();
-    const refreshedRates = await refreshMarketRates();
-
-    expect(refreshedRates.reference_market_rate).toBe(staticRates.reference_market_rate);
-    expect(refreshedRates.alternative_investment_annual_return).toBe(staticRates.alternative_investment_annual_return);
-    expect(refreshedRates.prime_rate_current).toBe(staticRates.prime_rate_current);
-  });
-
-  it("simulates network delay", async () => {
-    const startTime = Date.now();
-    await refreshMarketRates();
-    const endTime = Date.now();
-
-    // Should take approximately 500ms
-    expect(endTime - startTime).toBeGreaterThanOrEqual(400);
-    expect(endTime - startTime).toBeLessThan(1000);
-  });
-
-  it("can be called multiple times", async () => {
-    const rates1 = await refreshMarketRates();
-    const rates2 = await refreshMarketRates();
-
-    expect(rates1).toEqual(rates2);
-  });
-});
-
 describe("formatLastUpdated", () => {
+
   it("returns 'Today' for today's date", () => {
     const today = new Date().toISOString();
     expect(formatLastUpdated(today)).toBe("Today");

@@ -3,16 +3,9 @@
 
 import type { RateHistoryEntry } from "./types";
 
-interface MarketRates {
-  reference_market_rate: number;
-  alternative_investment_annual_return: number;
-  prime_rate_current: number;
-  last_updated: string;
-  source: string;
-}
-
 /**
  * Bank of Israel declared nominal interest rate (base rate) history.
+
  * Source: https://www.boi.org.il/boi_files/Statistics/bointcre_m.xls
  * Each entry is the base rate in effect from `date` (ISO) onward, until the
  * next entry. Rates are decimals (e.g. 0.045 = 4.5%).
@@ -252,40 +245,10 @@ export function getBoiAverageRate(fromDate: string, toDate?: string): number {
 }
 
 /**
- * Get current market rates (manually maintained)
- * Updated: July 2026
- * Source: Bank of Israel public data
- */
-export function getMarketRates(): MarketRates {
-
-  return {
-    reference_market_rate: 0.042,      // 4.2% - Current market rate for new mortgages
-    alternative_investment_annual_return: 0.06,  // 6% - Conservative investment return (gov bonds)
-    prime_rate_current: getCurrentBaseRate() + PRIME_SPREAD, // Prime = BoI base + 1.5%
-    // Derive the "as of" date from the actual latest BoI base-rate entry so it
-    // always stays in sync with the data in the table (never drifts out of sync
-    // with a hardcoded string).
-    last_updated: getRatesAsOfDate(),
-    source: 'Bank of Israel (manually updated)',
-
-  };
-}
-
-
-/**
- * Refresh rates (placeholder - just returns current values)
- * In the future, this could be updated by an admin
- */
-export async function refreshMarketRates(): Promise<MarketRates> {
-  // Simulate network delay for UX
-  await new Promise(resolve => setTimeout(resolve, 500));
-  return getMarketRates();
-}
-
-/**
  * Format the last updated timestamp for display
  */
 export function formatLastUpdated(isoString: string): string {
+
   const date = new Date(isoString);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();

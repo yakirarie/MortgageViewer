@@ -929,48 +929,102 @@ export function suggestOptimalAllocation(
 }
 
 // ---------------------------------------------------------------------------
-// §4.3 Alternative Opportunity Cost (Invest Instead)
+// §4.3 Early Payoff — Deterministic Debt-Savings Diagnostics
 // ---------------------------------------------------------------------------
 
-/** Future value of investing `lumpSum` for `termMonths` at `annualReturn`, compounded monthly. */
-export function investmentFutureValue(
-  lumpSum: number,
-  annualReturn: number,
-  termMonths: number
-): number {
-  if (lumpSum <= 0) return 0;
-  return lumpSum * Math.pow(1 + annualReturn / 12, termMonths);
+export interface PayoffDiagnostics {
+  /** Net principal + accrued daily interest + all exit fees (₪). */
+  totalPayoffOutlay: number;
+  /** Net cash interest avoided over the remaining term (₪). */
+  guaranteedInterestSaved: number;
+  /** Immediate drop in monthly repayment (₪/month). */
+  monthlyCashflowRelief: number;
+  /** Months of payments required for saved interest to offset the total exit fees. */
+  penaltyPaybackHorizon: number;
 }
-
-export function investmentNetGain(
-  lumpSum: number,
-  annualReturn: number,
-  termMonths: number
-): number {
-  return investmentFutureValue(lumpSum, annualReturn, termMonths) - lumpSum;
-}
-
-export type PayoffVsInvestVerdict = "PAYOFF_WINS" | "INVEST_WINS" | "ROUGHLY_EQUAL";
 
 /**
- * Compares total NPB across allocated tracks against the opportunity cost of
- * investing the same lump sum instead. "Roughly equal" is a 1%-of-lumpSum band,
- * per PRD §4.3.
+ * Deterministic early-payoff diagnostics for allocating `lumpSum` to a single
+ * track. Unlike the removed opportunity-cost comparison, these metrics are
+ * strictly debt-savings based — no speculative market assumptions:
+ *
+ *   totalPayoffOutlay      = L + amlat_pearei_ribit + notice_fee + operational_fee
+ *   guaranteedInterestSaved = interest avoided over the remaining term
+ *   monthlyCashflowRelief   = drop in the monthly repayment
+ *   penaltyPaybackHorizon   = total exit fees / monthly cashflow relief
+ *
+ * `lumpSum` is clamped to the track's balance. `penaltyPaybackHorizon` is 0 when
+ * there is no monthly relief (e.g. reduce_term mode keeps the payment constant).
  */
-export function comparePayoffVsInvest(
-  totalNpb: number,
-  investGain: number,
-  lumpSum: number
-): PayoffVsInvestVerdict {
-  const band = Math.abs(lumpSum) * 0.01;
-  const diff = totalNpb - investGain;
-  if (Math.abs(diff) < band) return "ROUGHLY_EQUAL";
-  return diff > 0 ? "PAYOFF_WINS" : "INVEST_WINS";
+export function payoffDiagnostics({
+  track,
+  lumpSum,
+  mode = "reduce_term",
+  noticeWaived = false,
+}: NpbInput): PayoffDiagnostics {
+  const L = Math.max(0, Math.min(lumpSum, track.principal_balance));
+  const originalPayment = effectiveMonthlyPayment(track);
+  const interestBefore = totalRemainingInterest(
+    track.principal_balance,
+    originalPayment,
+    track.remaining_term_months
+  );
+
+  const newBalance = track.principal_balance - L;
+
+  let interestAfter: number;
+  let monthlyCashflowRelief: number;
+  if (mode === "reduce_payment") {
+    const newPayment = spitzerMonthlyPayment(
+      newBalance,
+      track.annual_interest_rate,
+      track.remaining_term_months
+    );
+    interestAfter = totalRemainingInterest(
+      newBalance,
+      newPayment,
+      track.remaining_term_months
+    );
+    monthlyCashflowRelief = originalPayment - newPayment;
+  } else {
+    // reduce_term: keep the original payment, solve for the new (shorter) term
+    const newTerm = monthsToPayoff(
+      newBalance,
+      track.annual_interest_rate,
+      originalPayment
+    );
+    const boundedTerm = Number.isFinite(newTerm) ? newTerm : track.remaining_term_months;
+    interestAfter = totalRemainingInterest(newBalance, originalPayment, boundedTerm);
+    // The payment is unchanged in reduce_term mode → no monthly cashflow relief.
+    monthlyCashflowRelief = 0;
+  }
+
+  const guaranteedInterestSaved = interestBefore - interestAfter;
+
+  // Total exit fees due on early payoff: interest-gap penalty + operational fee
+  // (always due) + notice fee (waivable with advance notice).
+  const exitFees =
+    (L > 0 ? track.amlat_pearei_ribit + (track.operational_fee ?? 60) : 0) +
+    (noticeWaived || L === 0 ? 0 : track.notice_fee);
+
+  const totalPayoffOutlay = L + exitFees;
+
+  // Months of payments required for the saved interest to offset the exit fees.
+  const penaltyPaybackHorizon =
+    monthlyCashflowRelief > 0 ? exitFees / monthlyCashflowRelief : 0;
+
+  return {
+    totalPayoffOutlay,
+    guaranteedInterestSaved,
+    monthlyCashflowRelief,
+    penaltyPaybackHorizon,
+  };
 }
 
 // ---------------------------------------------------------------------------
 // §4.4 Refinancing (Mirzur) Breakeven
 // ---------------------------------------------------------------------------
+
 
 export interface RefinanceInput {
   oldMonthlyRepayment: number;
@@ -1011,11 +1065,12 @@ export function refinancingBreakeven({
 
 /**
  * Deterministic per-track recommendation, first matching rule wins, per PRD §4.5.
+ * The engine is strictly debt-savings based — it compares each track's rate to
+ * the portfolio's own weighted average (no speculative external market reference).
  */
 export function recommendActionForTrack(
   track: Track,
-  weightedRate: number,
-  referenceMarketRate: number
+  weightedRate: number
 ): TrackRecommendation {
   const penaltyRatio =
     track.principal_balance > 0 ? track.amlat_pearei_ribit / track.principal_balance : 0;
@@ -1041,20 +1096,7 @@ export function recommendActionForTrack(
     };
   }
 
-  // Rule 3: large gap to market rate, low penalty relative to balance
-  if (track.annual_interest_rate > referenceMarketRate + 0.0075 && penaltyRatio < 0.02) {
-    return {
-      track_id: track.track_id,
-      action: "CONSIDER_REFINANCING",
-      driver: `Rate is ${((track.annual_interest_rate - referenceMarketRate) * 100).toFixed(
-        1
-      )}pp above the market reference, penalty exposure is low (${(penaltyRatio * 100).toFixed(
-        1
-      )}% of balance)`,
-    };
-  }
-
-  // Rule 4: high penalty exposure relative to balance
+  // Rule 3: high penalty exposure relative to balance
   if (penaltyRatio >= 0.05) {
     return {
       track_id: track.track_id,
@@ -1065,7 +1107,7 @@ export function recommendActionForTrack(
     };
   }
 
-  // Rule 5: default
+  // Rule 4: default
   return {
     track_id: track.track_id,
     action: "HOLD",
@@ -1073,13 +1115,11 @@ export function recommendActionForTrack(
   };
 }
 
-export function recommendActionsForPortfolio(
-  tracks: Track[],
-  referenceMarketRate: number
-): TrackRecommendation[] {
+export function recommendActionsForPortfolio(tracks: Track[]): TrackRecommendation[] {
   const weightedRate = weightedAverageRate(tracks);
-  return tracks.map((t) => recommendActionForTrack(t, weightedRate, referenceMarketRate));
+  return tracks.map((t) => recommendActionForTrack(t, weightedRate));
 }
+
 
 /** Priority score for sorting the Tab 4 action list, per PRD §4.5. Higher = act sooner. */
 export function actionPriorityScore(track: Track, weightedRate: number): number {

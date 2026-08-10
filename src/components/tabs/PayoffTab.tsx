@@ -2,13 +2,11 @@ import { useState, useEffect } from 'react';
 import type { Profile } from '../../lib/types';
 import {
   netPayoffBenefit,
+  payoffDiagnostics,
   suggestOptimalAllocation,
-  investmentNetGain,
-  comparePayoffVsInvest,
   type PayoffReductionMode,
 } from '../../lib/mortgage-math';
 import { formatCurrency } from '../../lib/utils';
-import { getMarketRates } from '../../lib/rates-api';
 
 
 interface PayoffTabProps {
@@ -21,6 +19,7 @@ export function PayoffTab({ t, profile }: PayoffTabProps) {
   const [reductionMode, setReductionMode] = useState<PayoffReductionMode>('reduce_term');
   const [noticeWaived, setNoticeWaived] = useState(false);
   const [allocations, setAllocations] = useState<Record<string, number>>({});
+
 
   // Initialize allocations to match lump sum distribution
   useEffect(() => {
@@ -74,35 +73,38 @@ export function PayoffTab({ t, profile }: PayoffTabProps) {
 
   const totalNpb = trackResults.reduce((sum, { result }) => sum + result.netPayoffBenefit, 0);
 
-  // Investment comparison
-  const maxTerm = Math.max(...profile.tracks.map(t => t.remaining_term_months));
-  const investmentGain = investmentNetGain(lumpSum, getMarketRates().alternative_investment_annual_return, maxTerm);
+  // Deterministic debt-savings diagnostics for the full payoff of each track.
+  // These are strictly debt-savings based — no speculative market assumptions.
+  const trackDiagnostics = profile.tracks.map((track) => {
+    const allocated = allocations[track.track_id] || 0;
+    const diagnostics = payoffDiagnostics({
+      track,
+      lumpSum: allocated,
+      mode: reductionMode,
+      noticeWaived,
+    });
+    return {
+      track,
+      allocated,
+      diagnostics,
+    };
+  });
 
-  const comparison = comparePayoffVsInvest(totalNpb, investmentGain, lumpSum);
-
-  const getVerdictText = () => {
-    switch (comparison) {
-      case 'PAYOFF_WINS':
-        return `${t.payoff.verdictPayoffWins} ≈${formatCurrency(totalNpb - investmentGain)} over ${maxTerm} ${t.common.months}`;
-      case 'INVEST_WINS':
-        return `${t.payoff.verdictInvestWins} ≈${formatCurrency(investmentGain - totalNpb)} over ${maxTerm} ${t.common.months}`;
-      case 'ROUGHLY_EQUAL':
-        return t.payoff.verdictRoughlyEqual;
-    }
-  };
-
-  const getVerdictColor = () => {
-    switch (comparison) {
-      case 'PAYOFF_WINS':
-        return 'text-accent-primary';
-      case 'INVEST_WINS':
-        return 'text-accent-warning';
-      case 'ROUGHLY_EQUAL':
-        return 'text-text-secondary';
-    }
-  };
+  const totalPayoffOutlay = trackDiagnostics.reduce(
+    (sum, { diagnostics }) => sum + diagnostics.totalPayoffOutlay,
+    0
+  );
+  const totalGuaranteedInterestSaved = trackDiagnostics.reduce(
+    (sum, { diagnostics }) => sum + diagnostics.guaranteedInterestSaved,
+    0
+  );
+  const totalMonthlyCashflowRelief = trackDiagnostics.reduce(
+    (sum, { diagnostics }) => sum + diagnostics.monthlyCashflowRelief,
+    0
+  );
 
   return (
+
     <div className="p-6 space-y-6">
       <h2 className="text-2xl font-bold text-text-primary">{t.payoff.title}</h2>
 
@@ -248,23 +250,29 @@ export function PayoffTab({ t, profile }: PayoffTabProps) {
         </div>
       </div>
 
-      {/* Payoff vs Invest Comparison */}
+      {/* Deterministic Payoff Diagnostics */}
       <div className="bg-bg-surface-raised border border-border-subtle rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">{t.payoff.payoffVsInvest}</h3>
-        
+        <h3 className="text-lg font-semibold text-text-primary mb-4">{t.payoff.payoffDiagnostics}</h3>
+
         <div className="grid grid-cols-2 gap-6 mb-6">
           <div className="bg-bg-surface border border-border-subtle rounded p-4">
-            <div className="text-text-secondary mb-2">{t.payoff.totalPayoffBenefit}</div>
-            <div className="text-2xl font-mono text-accent-primary">{formatCurrency(totalNpb)}</div>
+            <div className="text-text-secondary mb-2">{t.payoff.totalPayoffOutlay}</div>
+            <div className="text-2xl font-mono text-accent-danger">{formatCurrency(totalPayoffOutlay)}</div>
           </div>
           <div className="bg-bg-surface border border-border-subtle rounded p-4">
-            <div className="text-text-secondary mb-2">{t.payoff.investmentGain} ({maxTerm} {t.common.months})</div>
-            <div className="text-2xl font-mono text-accent-warning">{formatCurrency(investmentGain)}</div>
+            <div className="text-text-secondary mb-2">{t.payoff.guaranteedInterestSaved}</div>
+            <div className="text-2xl font-mono text-accent-primary">{formatCurrency(totalGuaranteedInterestSaved)}</div>
           </div>
-        </div>
-
-        <div className={`text-lg font-medium mb-4 ${getVerdictColor()}`}>
-          {getVerdictText()}
+          <div className="bg-bg-surface border border-border-subtle rounded p-4">
+            <div className="text-text-secondary mb-2">{t.payoff.monthlyCashflowRelief}</div>
+            <div className="text-2xl font-mono text-accent-primary">{formatCurrency(totalMonthlyCashflowRelief)}</div>
+          </div>
+          <div className="bg-bg-surface border border-border-subtle rounded p-4">
+            <div className="text-text-secondary mb-2">{t.payoff.netBenefit}</div>
+            <div className={`text-2xl font-mono ${totalNpb > 0 ? 'text-accent-primary' : 'text-accent-danger'}`}>
+              {formatCurrency(totalNpb)}
+            </div>
+          </div>
         </div>
 
         <div className="bg-bg-surface border border-border-subtle rounded p-4 text-sm text-text-secondary">
@@ -281,3 +289,4 @@ export function PayoffTab({ t, profile }: PayoffTabProps) {
     </div>
   );
 }
+
