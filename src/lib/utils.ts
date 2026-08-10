@@ -1,7 +1,8 @@
 // Utility functions
 
 import type { Track, TrackExportSchema } from './types';
-import { clampRate, totalExitCost } from './mortgage-math';
+import { clampRate, totalExitCost, computeAccruedDailyInterest } from './mortgage-math';
+
 
 export function generateId(): string {
 
@@ -21,6 +22,22 @@ export function formatCurrency(value: number): string {
     maximumFractionDigits: 0,
   }).format(value);
 }
+
+/**
+ * Format a currency value with a configurable number of decimal places (Agorot
+ * precision). Used for figures like accrued daily interest where sub-shekel
+ * precision matters (e.g. +₪3,078.25). `decimals` defaults to 2.
+ */
+export function formatCurrencyPrecision(value: number, decimals = 2): string {
+  if (value === 0 || !Number.isFinite(value)) return '₪0';
+  return new Intl.NumberFormat('en-IL', {
+    style: 'currency',
+    currency: 'ILS',
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(value);
+}
+
 
 export function formatPercent(value: number): string {
   if (!Number.isFinite(value)) return '0%';
@@ -62,6 +79,33 @@ export function downloadJson(data: unknown, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Sanitize a user-supplied filename for a "Save As" download. Strips path
+ * separators and other characters that are invalid in filenames, trims
+ * whitespace, and guarantees a `.json` extension. Falls back to `fallback`
+ * (defaulting to a timestamped name) when the result would be empty.
+ */
+export function sanitizeFilename(input: string, fallback?: string): string {
+  const cleaned = (input || '')
+    .replace(/[\\/:*?"<>|]/g, '-') // replace path-invalid chars with '-'
+    .replace(/\s+/g, ' ') // collapse whitespace
+    .trim();
+
+  // Fall back when the result is empty or contains no meaningful (alphanumeric)
+  // characters — e.g. input was only whitespace or only invalid characters.
+  let name = /[a-z0-9]/i.test(cleaned) ? cleaned : '';
+  if (!name) {
+    name = fallback || `mashkanta-profile-${new Date().toISOString().split('T')[0]}`;
+  }
+  // Guarantee a .json extension (avoid double extensions like .json.json).
+  if (!/\.json$/i.test(name)) {
+    name = `${name}.json`;
+  }
+  return name;
+}
+
+
+
 export async function uploadJson(file: File): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -98,8 +142,31 @@ export function getCurrentTimestamp(): string {
  */
 export function serializeTrackForExport(track: Track): TrackExportSchema {
   const netPrincipalBalance = track.principal_balance;
-  const accruedDailyInterest = 0; // accrued interest is derived at payoff time
+
+  // Derive the monthly payment day-of-month from the first payout date (falling
+  // back to the start date), matching the amortization clock. The accrued daily
+  // interest is computed with fractional-day precision and stored as a float
+  // with 2 decimal places (Agorot level).
+  const paymentDay = track.first_payout_date
+    ? new Date(track.first_payout_date).getDate()
+    : track.start_date
+      ? new Date(track.start_date).getDate()
+      : new Date().getDate();
+
+  // Use the current effective rate (latest rate-history entry for Prime tracks,
+  // otherwise the track's annual rate).
+  const effectiveRate =
+    track.rate_history && track.rate_history.length > 0
+      ? track.rate_history[track.rate_history.length - 1].annual_interest_rate
+      : track.annual_interest_rate;
+
+  const accruedDailyInterest = computeAccruedDailyInterest(
+    netPrincipalBalance,
+    effectiveRate,
+    paymentDay
+  );
   const totalPayoffBalance = netPrincipalBalance + accruedDailyInterest;
+
 
   return {
     track_id: track.track_id,

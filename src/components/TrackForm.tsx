@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { Track, RateHistoryEntry } from '../lib/types';
 
-import { formatCurrency, formatPercent, parseCurrencyInput, parsePercentInput } from '../lib/utils';
+import { formatCurrency, formatCurrencyPrecision, formatPercent, parseCurrencyInput, parsePercentInput } from '../lib/utils';
+
 
 import { shouldShowResetWindow, getDefaultCpiLinked, getDefaultRate } from '../lib/validation';
 import { TRACK_TYPES } from '../lib/validation';
@@ -639,8 +640,9 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
             </span>
           </label>
           <div className="w-full bg-bg-surface border border-border-subtle rounded px-3 py-2 text-text-primary font-mono text-right font-tabular-nums opacity-80">
-            +{formatCurrency(displayAccruedInterest)}
+            +{formatCurrencyPrecision(displayAccruedInterest)}
           </div>
+
         </div>
 
         {/* Total Estimated Payoff */}

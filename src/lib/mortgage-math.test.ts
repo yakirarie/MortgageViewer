@@ -26,8 +26,10 @@ import {
   monthsToNextReset,
   totalExitCost,
   computeAmlatPeareiRibit,
+  computeAccruedDailyInterest,
   clampRate,
 } from "./mortgage-math";
+
 
 
 
@@ -959,6 +961,76 @@ describe("simulateFixedAmortization", () => {
     expect(result.totalPayoffBalance).toBeCloseTo(383989.27, 0);
   });
 
+  it("uses fractional-day precision when the as-of date carries a time-of-day", () => {
+    // As-of 2026-08-09 at 12:00 local (payment day = 10th → last payment was
+    // 2026-07-10). Elapsed = 30.5 days → accrued interest = 30.5 × daily rate.
+    const result = simulateFixedAmortization(
+      800000,
+      "2023-09-13",
+      360,
+      0.049,
+      "2023-10-10",
+      new Date(2026, 7, 9, 12, 0, 0) // 2026-08-09 12:00 local
+    );
+
+    const dailyRate = result.netPrincipalBalance * (0.049 / 365);
+    // 30.5 days × daily rate, rounded to 2 decimals (Agorot).
+    expect(result.accruedDailyInterest).toBeCloseTo(30.5 * dailyRate, 2);
+    expect(result.accruedDailyInterest).toBeGreaterThan(3078.31); // > 30 whole days
+  });
+});
+
+
+
+
+describe("computeAccruedDailyInterest", () => {
+  it("returns 0 for a zero net principal", () => {
+    expect(computeAccruedDailyInterest(0, 0.05, 10)).toBe(0);
+  });
+
+  it("returns 0 on the payment day (no days elapsed since the last payment)", () => {
+    // Payment day = 10th; as-of 2026-08-10 → 0 days elapsed.
+    expect(computeAccruedDailyInterest(191102, 0.049, 10, "2026-08-10")).toBe(0);
+  });
+
+  it("computes whole-day accrued interest for a date-string as-of (30 days)", () => {
+    // As-of 2026-08-09 (day 9 < payment day 10) → last payment 2026-07-10,
+    // exactly 30 whole days elapsed. 191,102 @ 4.9% → daily ≈ ₪25.66.
+    const accrued = computeAccruedDailyInterest(191102, 0.049, 10, "2026-08-09");
+    const dailyRate = 191102 * (0.049 / 365);
+    expect(accrued).toBeCloseTo(30 * dailyRate, 2);
+  });
+
+  it("uses fractional-day precision for a Date as-of with a time-of-day", () => {
+    // As-of 2026-08-09 12:00 local → 30.5 days elapsed since 2026-07-10.
+    const accrued = computeAccruedDailyInterest(
+      191102,
+      0.049,
+      10,
+      new Date(2026, 7, 9, 12, 0, 0)
+    );
+    const dailyRate = 191102 * (0.049 / 365);
+    expect(accrued).toBeCloseTo(30.5 * dailyRate, 2);
+  });
+
+  it("truncates elapsed days to 1 decimal place", () => {
+    // As-of 2026-08-09 12:34:56 local → 30.524 days → truncated to 30.5.
+    const accrued = computeAccruedDailyInterest(
+      191102,
+      0.049,
+      10,
+      new Date(2026, 7, 9, 12, 34, 56)
+    );
+    const dailyRate = 191102 * (0.049 / 365);
+    expect(accrued).toBeCloseTo(30.5 * dailyRate, 2);
+  });
+
+  it("rounds the accrued interest to 2 decimal places (Agorot)", () => {
+    const accrued = computeAccruedDailyInterest(191102, 0.049, 10, "2026-08-09");
+    // The function rounds via .toFixed(2); re-rounding to 2 decimals must be a
+    // no-op (i.e. the value is already at Agorot precision).
+    expect(accrued).toBeCloseTo(Number(accrued.toFixed(2)), 10);
+  });
 
 });
 
@@ -966,6 +1038,7 @@ describe("simulateFixedAmortization", () => {
 
 
 describe("fixedTrackGapPenalty", () => {
+
   it("returns 0 when the loan rate is at or below the BoI average rate", () => {
     const penalty = fixedTrackGapPenalty({
       netPrincipalBalance: 764365.28,

@@ -192,10 +192,63 @@ export function monthsToNextReset(
   return monthsBetween(asOf, reset);
 }
 
+/**
+ * Accrued daily interest (ריבית צבורה) since the last payment date, using
+ * fractional-day precision.
+ *
+ * The last payment is due on the monthly payment day-of-month (`paymentDay`) in
+ * the most recent month. The bank accrues interest daily at R/365 from the last
+ * payment date to the as-of date. Elapsed days are computed with floating-point
+ * precision (including the time-of-day fraction) and truncated to 1 decimal
+ * place (e.g. 30.5 days); the resulting interest is rounded to 2 decimal places
+ * (Agorot level).
+ *
+ * Returns 0 when the net principal is zero or the as-of date is on the payment
+ * day (no days elapsed since the last payment).
+ */
+export function computeAccruedDailyInterest(
+  netPrincipal: number,
+  annualRate: number,
+  paymentDay: number,
+  asOfDate?: string | Date
+): number {
+  if (netPrincipal <= 0) return 0;
+
+  // Parse a YYYY-MM-DD string as *local* midnight so the calendar day is
+  // interpreted in the user's timezone (avoiding UTC-parsing timezone drift
+  // that would otherwise shift the elapsed-day count). A Date object (or the
+  // default "today") keeps its time-of-day so the fractional-day precision
+  // reflects the actual moment of the query.
+  const asOf =
+    typeof asOfDate === "string"
+      ? new Date(asOfDate + "T00:00:00")
+      : asOfDate
+        ? new Date(asOfDate)
+        : new Date();
+
+  const paymentMadeThisMonth = asOf.getDate() >= paymentDay;
+  const lastPaymentDate = new Date(asOf.getFullYear(), asOf.getMonth(), paymentDay);
+  if (!paymentMadeThisMonth) {
+    // The as-of date is before this month's payment day → last payment was last month.
+    lastPaymentDate.setMonth(lastPaymentDate.getMonth() - 1);
+  }
+
+  // Floating-point elapsed days including the time-of-day fraction.
+  const msDiff = asOf.getTime() - lastPaymentDate.getTime();
+  const rawElapsedDays = Math.max(0, msDiff / (1000 * 60 * 60 * 24));
+  // Truncate elapsed days to 1 decimal place (e.g., 30.5 days).
+  const elapsedDays = Number(rawElapsedDays.toFixed(1));
+  // Accrued interest with floating precision (Agorot level).
+  const dailyRate = netPrincipal * (annualRate / 365);
+  return Number((dailyRate * elapsedDays).toFixed(2));
+}
+
+
 
 
 
 export interface PrimeAmortizationResult {
+
   /** Net principal balance today (before accrued daily interest). */
   netPrincipalBalance: number;
   /** Accrued daily interest since the last payment date (ריבית צבורה). */
@@ -234,7 +287,15 @@ export function simulatePrimeAmortization(
   firstPayoutDate?: string,
   asOfDate?: string | Date
 ): PrimeAmortizationResult {
-  const asOf = asOfDate ? new Date(asOfDate) : new Date();
+  // Parse a YYYY-MM-DD string as *local* midnight so the calendar day is
+  // interpreted in the user's timezone (avoiding UTC-parsing timezone drift).
+  const asOf =
+    typeof asOfDate === "string"
+      ? new Date(asOfDate + "T00:00:00")
+      : asOfDate
+        ? new Date(asOfDate)
+        : new Date();
+
 
   if (!startDate || originalTermMonths <= 0) {
     return {
@@ -312,28 +373,19 @@ export function simulatePrimeAmortization(
       ? spitzerMonthlyPayment(netPrincipal, latestRate, monthsLeft)
       : currentPayment;
 
-  // Accrued daily interest (ריבית צבורה) since the last payment date. The last
-  // payment is due on the monthly payment day-of-month (from the first payout
-  // date, falling back to the start date) in the most recent month. The bank
-  // accrues interest daily at R/365 from the last payment date to the as-of date,
-  // counting *whole calendar days* (no fractional-day drift).
-  const lastPaymentDate = new Date(asOf.getFullYear(), asOf.getMonth(), paymentDay);
-  if (!paymentMadeThisMonth) {
-    // The as-of date is before this month's payment day → last payment was last month.
-    lastPaymentDate.setMonth(lastPaymentDate.getMonth() - 1);
-  }
-  // Truncate both dates to midnight and floor the difference to whole days.
-  const lastPaymentMidnight = new Date(lastPaymentDate.setHours(0, 0, 0, 0));
-  const asOfMidnight = new Date(asOf.getFullYear(), asOf.getMonth(), asOf.getDate());
-  const accruedDays = Math.max(
-    0,
-    Math.floor((asOfMidnight.getTime() - lastPaymentMidnight.getTime()) / 86400000)
+  // Accrued daily interest (ריבית צבורה) since the last payment date, using
+  // fractional-day precision (see `computeAccruedDailyInterest`).
+  const accruedDailyInterest = computeAccruedDailyInterest(
+    netPrincipal,
+    latestRate,
+    paymentDay,
+    asOf
   );
-  const accruedDailyInterest =
-    netPrincipal > 0 ? netPrincipal * (latestRate / 365) * accruedDays : 0;
+
 
 
   const totalPayoffBalance = netPrincipal + accruedDailyInterest;
+
 
   return {
     currentBalance: totalPayoffBalance,
@@ -388,7 +440,15 @@ export function simulateFixedAmortization(
   firstPayoutDate?: string,
   asOfDate?: string | Date
 ): FixedAmortizationResult {
-  const asOf = asOfDate ? new Date(asOfDate) : new Date();
+  // Parse a YYYY-MM-DD string as *local* midnight so the calendar day is
+  // interpreted in the user's timezone (avoiding UTC-parsing timezone drift).
+  const asOf =
+    typeof asOfDate === "string"
+      ? new Date(asOfDate + "T00:00:00")
+      : asOfDate
+        ? new Date(asOfDate)
+        : new Date();
+
 
   if (originalTermMonths <= 0) {
     return {
@@ -475,28 +535,19 @@ export function simulateFixedAmortization(
       ? spitzerMonthlyPayment(netPrincipal, annualRate, monthsLeft)
       : originationPayment;
 
-  // Accrued daily interest (ריבית צבורה) since the last payment date. The last
-  // payment is due on the monthly payment day-of-month (from the first payout
-  // date, falling back to the start date) in the most recent month. The bank
-  // accrues interest daily at R/365 from the last payment date to the as-of date,
-  // counting *whole calendar days* (no fractional-day drift).
-  const lastPaymentDate = new Date(asOf.getFullYear(), asOf.getMonth(), paymentDay);
-  if (!paymentMadeThisMonth) {
-    // The as-of date is before this month's payment day → last payment was last month.
-    lastPaymentDate.setMonth(lastPaymentDate.getMonth() - 1);
-  }
-  // Truncate both dates to midnight and floor the difference to whole days.
-  const lastPaymentMidnight = new Date(lastPaymentDate.setHours(0, 0, 0, 0));
-  const asOfMidnight = new Date(asOf.getFullYear(), asOf.getMonth(), asOf.getDate());
-  const accruedDays = Math.max(
-    0,
-    Math.floor((asOfMidnight.getTime() - lastPaymentMidnight.getTime()) / 86400000)
+  // Accrued daily interest (ריבית צבורה) since the last payment date, using
+  // fractional-day precision (see `computeAccruedDailyInterest`).
+  const accruedDailyInterest = computeAccruedDailyInterest(
+    netPrincipal,
+    annualRate,
+    paymentDay,
+    asOf
   );
-  const accruedDailyInterest =
-    netPrincipal > 0 ? netPrincipal * (annualRate / 365) * accruedDays : 0;
+
 
 
   const totalPayoffBalance = netPrincipal + accruedDailyInterest;
+
 
   return {
     currentBalance: totalPayoffBalance,

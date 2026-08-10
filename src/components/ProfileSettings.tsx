@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import type { Profile, Track } from '../lib/types';
 
 import { TrackCard } from './TrackCard';
-import { uploadJson, downloadJson, serializeTrackForExport } from '../lib/utils';
+import { uploadJson, downloadJson, sanitizeFilename, serializeTrackForExport } from '../lib/utils';
+
 
 import { validateProfile } from '../lib/validation';
 
@@ -104,8 +105,26 @@ export function ProfileSettings({ profile: initialProfile, onApplyChanges, onClo
     }
   };
 
-  const handleExport = () => {
-    const filename = `mashkanta-${localProfile.profile_name.replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.json`;
+  // "Save As" modal state — lets the user choose a filename before the profile
+  // is saved, instead of a straight download with an auto-generated name.
+  const [saveAsOpen, setSaveAsOpen] = useState(false);
+  const [saveAsFilename, setSaveAsFilename] = useState('');
+
+  const defaultExportFilename = () =>
+    `mashkanta-${localProfile.profile_name.replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.json`;
+
+  const openSaveAs = () => {
+    setSaveAsFilename(defaultExportFilename());
+    setSaveAsOpen(true);
+  };
+
+  const closeSaveAs = () => {
+    setSaveAsOpen(false);
+    setSaveAsFilename('');
+  };
+
+  const handleSaveAs = () => {
+    const filename = sanitizeFilename(saveAsFilename, defaultExportFilename());
     // Export each track through the clean TrackExportSchema serializer, which
     // isolates net principal from accrued daily interest, separates the early
     // payoff fee into its distinct line items, and clamps rates to 6 decimals.
@@ -115,13 +134,15 @@ export function ProfileSettings({ profile: initialProfile, onApplyChanges, onClo
     };
     downloadJson(exportProfile, filename);
     setImportStatus('success');
-    setImportMessage(`Profile exported as ${filename}`);
-    
+    setImportMessage(`Profile saved as ${filename}`);
+    closeSaveAs();
+
     setTimeout(() => {
       setImportStatus('idle');
       setImportMessage('');
     }, 3000);
   };
+
 
 
   const handleLoadDemo = () => {
@@ -368,11 +389,12 @@ export function ProfileSettings({ profile: initialProfile, onApplyChanges, onClo
                 Load Demo Profile
               </button>
               <button
-                onClick={handleExport}
+                onClick={openSaveAs}
                 className="px-4 py-3 bg-bg-surface-raised border border-border-subtle rounded text-text-primary hover:border-accent-info text-sm"
               >
-                💾 Download Profile
+                💾 Save As
               </button>
+
               <button
                 onClick={() => fileInputRef.current?.click()}
                 className="px-4 py-3 bg-bg-surface-raised border border-border-subtle rounded text-text-primary hover:border-accent-info text-sm"
@@ -415,8 +437,9 @@ export function ProfileSettings({ profile: initialProfile, onApplyChanges, onClo
               <p>💡 <strong>Profile Name:</strong> A friendly name for your mortgage portfolio.</p>
               <p>🏠 <strong>Tracks:</strong> Add, edit, or remove mortgage tracks directly here.</p>
 
-              <p>💾 <strong>Download:</strong> Save your complete profile as a JSON file for backup.</p>
+              <p>💾 <strong>Save As:</strong> Save your complete profile as a JSON file, choosing the filename.</p>
               <p>📁 <strong>Upload:</strong> Load a previously saved profile from a JSON file.</p>
+
             </div>
           )}
         </div>
@@ -434,6 +457,48 @@ export function ProfileSettings({ profile: initialProfile, onApplyChanges, onClo
         </div>
 
       </div>
+
+      {/* Save As Modal */}
+      {saveAsOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-bg-surface rounded-lg max-w-md w-full p-6">
+            <h3 className="text-xl font-bold text-text-primary mb-1">Save Profile As</h3>
+            <p className="text-text-secondary text-sm mb-4">
+              Choose a filename for your profile backup.
+            </p>
+            <label className="block text-sm font-medium text-text-primary mb-2">
+              Filename
+            </label>
+            <input
+              type="text"
+              value={saveAsFilename}
+              onChange={(e) => setSaveAsFilename(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSaveAs();
+                if (e.key === 'Escape') closeSaveAs();
+              }}
+              autoFocus
+              className="w-full bg-bg-surface-raised border border-border-subtle rounded px-3 py-2 text-text-primary focus:outline-none focus:border-accent-info"
+              placeholder="mashkanta-profile.json"
+            />
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={handleSaveAs}
+                className="flex-1 py-2.5 bg-accent-primary text-bg-primary rounded font-medium hover:opacity-90"
+              >
+                Save
+              </button>
+              <button
+                onClick={closeSaveAs}
+                className="flex-1 py-2.5 bg-bg-surface-raised border border-border-subtle rounded text-text-primary hover:border-accent-info"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

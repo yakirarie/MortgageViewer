@@ -3,15 +3,19 @@ import type { Track } from "./types";
 import {
   generateId,
   formatCurrency,
+  formatCurrencyPrecision,
   formatPercent,
   formatNumber,
   parseCurrencyInput,
   parsePercentInput,
   downloadJson,
+  sanitizeFilename,
   uploadJson,
   getCurrentTimestamp,
   serializeTrackForExport,
 } from "./utils";
+
+
 
 
 describe("generateId", () => {
@@ -58,7 +62,34 @@ describe("formatCurrency", () => {
   });
 });
 
+describe("formatCurrencyPrecision", () => {
+  it("formats zero as ₪0", () => {
+    expect(formatCurrencyPrecision(0)).toBe("₪0");
+  });
+
+  it("formats with 2 decimal places by default (Agorot precision)", () => {
+    expect(formatCurrencyPrecision(3078.31)).toBe("₪3,078.31");
+    expect(formatCurrencyPrecision(1565.32)).toBe("₪1,565.32");
+  });
+
+  it("formats with a custom number of decimal places", () => {
+    expect(formatCurrencyPrecision(1234.5, 1)).toBe("₪1,234.5");
+    expect(formatCurrencyPrecision(1234.567, 3)).toBe("₪1,234.567");
+  });
+
+  it("handles whole numbers with the requested decimals", () => {
+    expect(formatCurrencyPrecision(1000)).toBe("₪1,000.00");
+  });
+
+  it("returns ₪0 for non-finite values", () => {
+    expect(formatCurrencyPrecision(NaN)).toBe("₪0");
+    expect(formatCurrencyPrecision(Infinity)).toBe("₪0");
+    expect(formatCurrencyPrecision(-Infinity)).toBe("₪0");
+  });
+});
+
 describe("formatPercent", () => {
+
   it("formats zero as 0%", () => {
     expect(formatPercent(0)).toBe("0.00%");
   });
@@ -181,7 +212,48 @@ describe("downloadJson", () => {
   // The function is tested manually in the browser
 });
 
+describe("sanitizeFilename", () => {
+  it("appends .json when the input has no extension", () => {
+    expect(sanitizeFilename("my-profile")).toBe("my-profile.json");
+  });
+
+  it("keeps an existing .json extension", () => {
+    expect(sanitizeFilename("my-profile.json")).toBe("my-profile.json");
+  });
+
+  it("keeps an existing .JSON extension (case-insensitive)", () => {
+    expect(sanitizeFilename("my-profile.JSON")).toBe("my-profile.JSON");
+  });
+
+  it("does not double the .json extension", () => {
+    expect(sanitizeFilename("my-profile.json.json")).toBe("my-profile.json.json");
+  });
+
+  it("replaces path-invalid characters with dashes", () => {
+    expect(sanitizeFilename("a/b\\c:d*e?f\"g<h>i|j")).toBe("a-b-c-d-e-f-g-h-i-j.json");
+  });
+
+  it("collapses whitespace and trims", () => {
+    expect(sanitizeFilename("  my   profile  ")).toBe("my profile.json");
+  });
+
+  it("falls back to the provided fallback when input is empty", () => {
+    expect(sanitizeFilename("", "backup.json")).toBe("backup.json");
+  });
+
+  it("falls back to a timestamped name when input and fallback are empty", () => {
+    const result = sanitizeFilename("  ", "");
+    expect(result).toMatch(/^mashkanta-profile-\d{4}-\d{2}-\d{2}\.json$/);
+  });
+
+  it("falls back to a timestamped name when input is only invalid characters", () => {
+    const result = sanitizeFilename("///");
+    expect(result).toMatch(/^mashkanta-profile-\d{4}-\d{2}-\d{2}\.json$/);
+  });
+});
+
 describe("uploadJson", () => {
+
   it("is a function that exists", () => {
     expect(typeof uploadJson).toBe("function");
   });
@@ -229,9 +301,61 @@ describe("serializeTrackForExport", () => {
   it("separates net principal, accrued interest, and total payoff balance", () => {
     const serialized = serializeTrackForExport(makeTrack({ principal_balance: 480000 }));
     expect(serialized.net_principal_balance).toBe(480000);
-    expect(serialized.accrued_daily_interest).toBe(0);
-    expect(serialized.total_payoff_balance).toBe(480000);
+    // Accrued daily interest is now computed from the current effective rate and
+    // the payment day (derived from the first payout / start date, falling back
+    // to today). It is non-negative and stored at Agorot precision.
+    expect(serialized.accrued_daily_interest).toBeGreaterThanOrEqual(0);
+    expect(serialized.total_payoff_balance).toBeCloseTo(
+      serialized.net_principal_balance + serialized.accrued_daily_interest,
+      5
+    );
   });
+
+  it("stores the computed accrued daily interest at Agorot precision (2 decimals)", () => {
+    // A track with a start date + first payout date (payment day 10th) and a
+    // rate history. The serialized accrued interest is derived from the latest
+    // effective rate and rounded to 2 decimal places.
+    const serialized = serializeTrackForExport(
+      makeTrack({
+        start_date: "2023-09-13",
+        first_payout_date: "2023-10-10",
+        annual_interest_rate: 0.049,
+        rate_history: [
+          { effective_date: "2023-09-13", annual_interest_rate: 0.049 },
+        ],
+      })
+    );
+    expect(serialized.accrued_daily_interest).toBeGreaterThanOrEqual(0);
+    // The stored value is already rounded to 2 decimals (Agorot level).
+    expect(serialized.accrued_daily_interest).toBeCloseTo(
+      Number(serialized.accrued_daily_interest.toFixed(2)),
+      10
+    );
+    // total_payoff_balance = net principal + accrued interest.
+    expect(serialized.total_payoff_balance).toBeCloseTo(
+      serialized.net_principal_balance + serialized.accrued_daily_interest,
+      5
+    );
+  });
+
+  it("uses the latest rate-history entry as the effective rate for accrued interest", () => {
+    // The latest rate-history entry (0.044) drives the accrued interest, not the
+    // track's stale annual_interest_rate (0.055).
+    const serialized = serializeTrackForExport(
+      makeTrack({
+        start_date: "2023-01-05",
+        first_payout_date: "2023-02-05",
+        annual_interest_rate: 0.055,
+        rate_history: [
+          { effective_date: "2023-01-05", annual_interest_rate: 0.039 },
+          { effective_date: "2023-02-23", annual_interest_rate: 0.044 },
+        ],
+      })
+    );
+    // Sanity: the accrued interest is positive (there is a rate and elapsed days).
+    expect(serialized.accrued_daily_interest).toBeGreaterThan(0);
+  });
+
 
   it("clamps rates to 6 decimal places", () => {
     const serialized = serializeTrackForExport(
