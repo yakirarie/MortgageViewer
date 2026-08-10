@@ -1,4 +1,5 @@
 import type { Profile } from '../lib/types';
+import { getRatesAsOfDate, isRatesCurrent, formatFullDateTime } from '../lib/rates-api';
 
 
 interface HeaderProps {
@@ -12,6 +13,10 @@ interface HeaderProps {
 }
 
 export function Header({ onProfileSettings, profile, theme, onToggleTheme, language, onToggleLanguage, t }: HeaderProps) {
+  const ratesAsOf = getRatesAsOfDate();
+  const ratesCurrent = isRatesCurrent();
+  const ratesAsOfLabel = formatFullDateTime(ratesAsOf);
+
   return (
     <header className="bg-bg-surface border-b border-border-subtle px-6 py-4">
       <div className="container mx-auto flex justify-between items-center">
@@ -26,6 +31,18 @@ export function Header({ onProfileSettings, profile, theme, onToggleTheme, langu
         </div>
         
         <div className="flex items-center gap-3">
+          {/* Rate data freshness indicator */}
+          <span
+            className={`text-xs px-2 py-1 rounded border ${
+              ratesCurrent
+                ? 'text-success border-success/40 bg-success/10'
+                : 'text-accent-warning border-accent-warning/40 bg-accent-warning/10'
+            }`}
+            title={`Bank of Israel base rate data as of ${ratesAsOfLabel}. ${ratesCurrent ? 'Current.' : 'May be outdated — update the rate table in src/lib/rates-api.ts.'}`}
+          >
+            {ratesCurrent ? '✓' : '⚠'} Rates as of {ratesAsOfLabel}
+          </span>
+
           <button
             onClick={onProfileSettings}
             className="px-4 py-2 bg-accent-primary text-bg-primary rounded font-medium hover:opacity-90 text-sm"

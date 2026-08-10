@@ -103,6 +103,46 @@ export function getCurrentBaseRate(): number {
 }
 
 /**
+ * The date of the most recent BoI base-rate decision in the table. This is the
+ * "as of" date for all rate data — the app's rates are a static, manually
+ * maintained snapshot, so this reflects exactly when the data was last updated.
+ */
+export function getRatesAsOfDate(): string {
+  return BOI_BASE_RATE_HISTORY[0].date;
+}
+
+/**
+ * Whether the rate data reflects today's BoI base rate (i.e. the latest entry
+ * in the table is dated today). Returns false when the data is stale.
+ */
+export function isRatesCurrent(): boolean {
+  const asOf = new Date(getRatesAsOfDate());
+  const today = new Date();
+  return (
+    asOf.getFullYear() === today.getFullYear() &&
+    asOf.getMonth() === today.getMonth() &&
+    asOf.getDate() === today.getDate()
+  );
+}
+
+/**
+ * Format a date as a full, human-readable date with time, e.g.
+ * "July 9, 2026, 3:48 PM". Accepts a Date or an ISO/date string.
+ */
+export function formatFullDateTime(date: Date | string): string {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+
+/**
  * Get the Bank of Israel base rate in effect at a given ISO date.
  * Returns the rate of the latest entry whose date is <= `date`. If `date`
  * predates the table, returns the oldest known rate. If `date` is invalid,
@@ -221,12 +261,16 @@ export function getMarketRates(): MarketRates {
   return {
     reference_market_rate: 0.042,      // 4.2% - Current market rate for new mortgages
     alternative_investment_annual_return: 0.06,  // 6% - Conservative investment return (gov bonds)
-    prime_rate_current: getCurrentBaseRate() + PRIME_SPREAD, // Prime = BoI base + 1.5% (as of Jul 2026)
-    last_updated: '2026-07-09',
+    prime_rate_current: getCurrentBaseRate() + PRIME_SPREAD, // Prime = BoI base + 1.5%
+    // Derive the "as of" date from the actual latest BoI base-rate entry so it
+    // always stays in sync with the data in the table (never drifts out of sync
+    // with a hardcoded string).
+    last_updated: getRatesAsOfDate(),
     source: 'Bank of Israel (manually updated)',
 
   };
 }
+
 
 /**
  * Refresh rates (placeholder - just returns current values)

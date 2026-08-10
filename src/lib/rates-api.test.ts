@@ -5,12 +5,16 @@ import {
   refreshMarketRates,
   formatLastUpdated,
   getCurrentBaseRate,
+  getRatesAsOfDate,
+  isRatesCurrent,
+  formatFullDateTime,
   getPrimeBaseRateAt,
   primeEffectiveRate,
   populatePrimeRateHistory,
   getBoiAverageRate,
   BOI_BASE_RATE_HISTORY,
 } from "./rates-api";
+
 
 
 
@@ -104,7 +108,53 @@ describe("getCurrentBaseRate", () => {
   });
 });
 
+describe("getRatesAsOfDate", () => {
+  it("returns the date of the latest BoI base-rate entry", () => {
+    expect(getRatesAsOfDate()).toBe("2026-07-09");
+  });
+
+  it("matches the first entry in the base-rate history table", () => {
+    expect(getRatesAsOfDate()).toBe(BOI_BASE_RATE_HISTORY[0].date);
+  });
+});
+
+describe("isRatesCurrent", () => {
+  it("returns a boolean", () => {
+    expect(typeof isRatesCurrent()).toBe("boolean");
+  });
+
+  it("returns true when the latest base-rate entry is dated today", () => {
+    // The table's latest entry is 2026-07-09. If today is that date, it's current.
+    const today = new Date();
+    const asOf = new Date(getRatesAsOfDate());
+    const sameDay =
+      today.getFullYear() === asOf.getFullYear() &&
+      today.getMonth() === asOf.getMonth() &&
+      today.getDate() === asOf.getDate();
+    expect(isRatesCurrent()).toBe(sameDay);
+  });
+});
+
+describe("formatFullDateTime", () => {
+  it("formats a Date with full date and time", () => {
+    const d = new Date(2026, 6, 9, 15, 48); // July 9, 2026, 3:48 PM
+    const result = formatFullDateTime(d);
+    expect(result).toContain("July 9, 2026");
+    expect(result).toContain("3:48");
+  });
+
+  it("accepts an ISO/date string", () => {
+    const result = formatFullDateTime("2026-07-09");
+    expect(result).toContain("July 9, 2026");
+  });
+
+  it("returns an empty string for an invalid date", () => {
+    expect(formatFullDateTime("not-a-date")).toBe("");
+  });
+});
+
 describe("getPrimeBaseRateAt", () => {
+
   it("returns the current rate for a date after the latest entry", () => {
     expect(getPrimeBaseRateAt("2030-01-01")).toBe(0.035);
   });
