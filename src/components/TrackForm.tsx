@@ -10,12 +10,15 @@ import { populatePrimeRateHistory, getPrimeBaseRateAt, primeEffectiveRate, getCu
 
 
 import {
+  deriveTrackPayoff,
   simulatePrimeAmortization,
   simulateFixedAmortization,
   nextResetDate,
   monthsToNextReset,
   totalExitCost,
 } from '../lib/mortgage-math';
+
+
 
 
 
@@ -87,17 +90,9 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
   // from the original amount + original term + start date + rate.
   // -------------------------------------------------------------------------
 
-  const buildRateHistory = (): RateHistoryEntry[] => {
-    if (isPrime) return track.rate_history || [];
-    // Non-Prime tracks use a single constant rate from the start date.
-    if (track.start_date) {
-      return [{ effective_date: track.start_date, annual_interest_rate: track.annual_interest_rate }];
-    }
-    return [];
-  };
-
   /**
    * The original term in months. When a track was imported without an explicit
+
    * `original_term_months` (older profiles only stored `remaining_term_months`),
    * treat `remaining_term_months` as the committed full term. The amortization
    * engine then derives the true remaining term as `originalTerm − elapsed`, so
@@ -194,45 +189,12 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
 
 
 
-  // Derived values for the read-only "Auto-Calculated" section.
-  const derived = (() => {
-    const history = buildRateHistory();
-    const originalTerm = getEffectiveOriginalTerm();
-    if (
-      track.original_principal !== undefined &&
-      track.original_principal > 0 &&
-      originalTerm > 0
-    ) {
-      if (isPrime) {
-        // Prime: amortize along the historical BoI rate timeline (needs a start
-        // date + rate history).
-        if (track.start_date && history.length > 0) {
-          return simulatePrimeAmortization(
-            track.original_principal,
-            track.start_date,
-            originalTerm,
-            history,
-            track.first_payout_date
-          );
-        }
-      } else {
-        // All non-Prime tracks (FIXED_UNLINKED, VARIABLE_5Y, FIXED_LINKED,
-        // OTHER) amortize at the current block's constant rate over the elapsed
-        // months. Runs even without a start date (elapsed = 0 → balance =
-        // original, payment = Spitzer at the original principal over the full
-        // term). This prevents a Variable 5Y track from falling back to a fresh
-        // 360-month loan when it has a start date but no rate history.
-        return simulateFixedAmortization(
-          track.original_principal,
-          track.start_date || '',
-          originalTerm,
-          track.annual_interest_rate,
-          track.first_payout_date
-        );
-      }
-    }
-    return null;
-  })();
+  // Derived values for the read-only "Auto-Calculated" section. Uses the shared
+  // `deriveTrackPayoff` helper so the form and the track card header always show
+  // the same live amortization-derived figures (net principal, accrued interest,
+  // total estimated payoff, remaining term, and current payment).
+  const derived = deriveTrackPayoff(track);
+
 
 
 

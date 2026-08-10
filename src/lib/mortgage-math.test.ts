@@ -20,6 +20,7 @@ import {
   spitzerMonthlyPaymentWithHistory,
   simulatePrimeAmortization,
   simulateFixedAmortization,
+  deriveTrackPayoff,
   fixedTrackGapPenalty,
   nextResetDate,
   monthsToNextReset,
@@ -28,6 +29,7 @@ import {
   computeAccruedDailyInterest,
   clampRate,
 } from "./mortgage-math";
+
 
 
 
@@ -1029,10 +1031,131 @@ describe("simulateFixedAmortization", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// §4.1d deriveTrackPayoff — shared live payoff derivation (card + form)
+// ---------------------------------------------------------------------------
+
+describe("deriveTrackPayoff", () => {
+  it("returns null when there is no original principal", () => {
+    const track = makeTrack({
+      track_type: "FIXED_UNLINKED",
+      original_principal: undefined,
+      original_term_months: 360,
+      annual_interest_rate: 0.05,
+    });
+    expect(deriveTrackPayoff(track)).toBeNull();
+  });
+
+  it("returns null when there is no original term", () => {
+    const track = makeTrack({
+      track_type: "FIXED_UNLINKED",
+      original_principal: 500000,
+      original_term_months: undefined,
+      remaining_term_months: 0,
+      annual_interest_rate: 0.05,
+    });
+    expect(deriveTrackPayoff(track)).toBeNull();
+  });
+
+  it("falls back to remaining_term_months as the original term for older imports", () => {
+    // Older profiles only stored remaining_term_months. deriveTrackPayoff treats
+    // it as the committed full term so the amortization can still run.
+    const track = makeTrack({
+      track_type: "FIXED_UNLINKED",
+      original_principal: 500000,
+      original_term_months: undefined,
+      remaining_term_months: 360,
+      annual_interest_rate: 0.05,
+    });
+    const result = deriveTrackPayoff(track);
+    expect(result).not.toBeNull();
+    expect(result!.remainingTermMonths).toBe(360); // elapsed = 0 (no start date)
+  });
+
+  it("derives a non-Prime track via simulateFixedAmortization (matches the direct call)", () => {
+    const track = makeTrack({
+      track_type: "FIXED_UNLINKED",
+      original_principal: 800000,
+      original_term_months: 360,
+      start_date: "2023-09-13",
+      first_payout_date: "2023-10-10",
+      annual_interest_rate: 0.049,
+    });
+    const derived = deriveTrackPayoff(track);
+    const direct = simulateFixedAmortization(
+      800000,
+      "2023-09-13",
+      360,
+      0.049,
+      "2023-10-10"
+    );
+    expect(derived).not.toBeNull();
+    expect(derived!.netPrincipalBalance).toBeCloseTo(direct.netPrincipalBalance, 5);
+    expect(derived!.totalPayoffBalance).toBeCloseTo(direct.totalPayoffBalance, 5);
+    expect(derived!.currentMonthlyPayment).toBeCloseTo(direct.currentMonthlyPayment, 5);
+    expect(derived!.remainingTermMonths).toBe(direct.remainingTermMonths);
+  });
+
+  it("derives a Prime track along its BoI rate timeline (matches the direct call)", () => {
+    const startDate = "2023-01-05";
+    const history = [
+      { effective_date: startDate, annual_interest_rate: 0.039 },
+      { effective_date: "2023-02-23", annual_interest_rate: 0.044 },
+      { effective_date: "2023-05-25", annual_interest_rate: 0.049 },
+    ];
+    const track = makeTrack({
+      track_type: "PRIME",
+      original_principal: 500000,
+      original_term_months: 360,
+      start_date: startDate,
+      annual_interest_rate: 0.049,
+      rate_history: history,
+    });
+    const derived = deriveTrackPayoff(track);
+    const direct = simulatePrimeAmortization(500000, startDate, 360, history);
+    expect(derived).not.toBeNull();
+    expect(derived!.netPrincipalBalance).toBeCloseTo(direct.netPrincipalBalance, 5);
+    expect(derived!.totalPayoffBalance).toBeCloseTo(direct.totalPayoffBalance, 5);
+    expect(derived!.currentMonthlyPayment).toBeCloseTo(direct.currentMonthlyPayment, 5);
+    expect(derived!.remainingTermMonths).toBe(direct.remainingTermMonths);
+  });
+
+  it("returns null for a Prime track without a start date or rate history", () => {
+    const track = makeTrack({
+      track_type: "PRIME",
+      original_principal: 500000,
+      original_term_months: 360,
+      annual_interest_rate: 0.05,
+    });
+    expect(deriveTrackPayoff(track)).toBeNull();
+  });
+
+  it("produces a total payoff balance that includes accrued daily interest", () => {
+    // A fully-configured fixed track should show totalPayoffBalance >= net
+    // principal (accrued interest is non-negative).
+    const track = makeTrack({
+      track_type: "FIXED_UNLINKED",
+      original_principal: 800000,
+      original_term_months: 360,
+      start_date: "2023-09-13",
+      first_payout_date: "2023-10-10",
+      annual_interest_rate: 0.049,
+    });
+    const derived = deriveTrackPayoff(track);
+    expect(derived).not.toBeNull();
+    expect(derived!.accruedDailyInterest).toBeGreaterThanOrEqual(0);
+    expect(derived!.totalPayoffBalance).toBeCloseTo(
+      derived!.netPrincipalBalance + derived!.accruedDailyInterest,
+      5
+    );
+  });
+});
+
 
 
 
 describe("computeAccruedDailyInterest", () => {
+
   it("returns 0 for a zero net principal", () => {
     expect(computeAccruedDailyInterest(0, 0.05, 10)).toBe(0);
   });

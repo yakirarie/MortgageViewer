@@ -562,7 +562,61 @@ export function simulateFixedAmortization(
 }
 
 
+/**
+ * The live amortization-derived payoff values for a track, computed as of today.
+ *
+ * This is the single source of truth for the "Auto-Calculated" figures shown in
+ * the UI (net principal, accrued daily interest, total estimated payoff, current
+ * payment, and remaining term). Prime tracks amortize along their historical BoI
+ * rate timeline (`simulatePrimeAmortization`); all other tracks amortize at their
+ * current constant rate (`simulateFixedAmortization`).
+ *
+ * Returns `null` when there is no original principal / original term to derive
+ * from (the track has not been fully configured yet). Callers should fall back to
+ * the track's stored `principal_balance` in that case.
+ */
+export function deriveTrackPayoff(track: Track): PrimeAmortizationResult | FixedAmortizationResult | null {
+  const originalPrincipal = track.original_principal;
+  const originalTerm = track.original_term_months && track.original_term_months > 0
+    ? track.original_term_months
+    : track.remaining_term_months && track.remaining_term_months > 0
+      ? track.remaining_term_months
+      : 0;
+
+  if (originalPrincipal === undefined || originalPrincipal <= 0 || originalTerm <= 0) {
+    return null;
+  }
+
+  if (track.track_type === "PRIME") {
+    const history = track.rate_history || [];
+    if (track.start_date && history.length > 0) {
+      return simulatePrimeAmortization(
+        originalPrincipal,
+        track.start_date,
+        originalTerm,
+        history,
+        track.first_payout_date
+      );
+    }
+    return null;
+  }
+
+  // All non-Prime tracks (FIXED_UNLINKED, VARIABLE_5Y, FIXED_LINKED, OTHER)
+  // amortize at the current block's constant rate over the elapsed months. Runs
+  // even without a start date (elapsed = 0 → balance = original, payment =
+  // Spitzer at the original principal over the full term).
+  return simulateFixedAmortization(
+    originalPrincipal,
+    track.start_date || "",
+    originalTerm,
+    track.annual_interest_rate,
+    track.first_payout_date
+  );
+}
+
+
 export interface FixedGapPenaltyInput {
+
   /** Net principal balance today (₪). */
   netPrincipalBalance: number;
   /** The fixed annual rate on the loan (decimal, e.g. 0.049). */

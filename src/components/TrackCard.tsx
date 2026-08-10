@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import type { Track } from '../lib/types';
 import { formatCurrency, formatPercent } from '../lib/utils';
+import { deriveTrackPayoff } from '../lib/mortgage-math';
 import { TrackForm } from './TrackForm';
+
 
 interface TrackCardProps {
   track: Track;
@@ -53,6 +55,15 @@ export function TrackCard({
     return colors[track.track_type] || 'bg-track-other';
   };
 
+  // Live amortization-derived payoff (net principal + accrued daily interest as
+  // of today). This keeps the card header "Balance" consistent with the "Total
+  // Estimated Payoff" shown in the expanded form — both use the same shared
+  // `deriveTrackPayoff` helper. Falls back to the stored `principal_balance`
+  // when the track isn't fully configured (no original principal/term).
+  const derived = deriveTrackPayoff(track);
+  const displayBalance = derived ? derived.totalPayoffBalance : track.principal_balance;
+
+
   return (
     <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
       {/* Card Header (always visible) */}
@@ -79,11 +90,12 @@ export function TrackCard({
           </div>
 
           <div className="flex items-center gap-4 text-sm">
-            {/* Balance */}
+            {/* Balance (live total estimated payoff, consistent with the form) */}
             <div className="text-right">
               <div className="text-text-secondary text-xs">Balance</div>
-              <div className="text-text-primary font-mono">{formatCurrency(track.principal_balance)}</div>
+              <div className="text-text-primary font-mono">{formatCurrency(displayBalance)}</div>
             </div>
+
 
             {/* Rate */}
             <div className="text-right">
