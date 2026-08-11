@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import type { Profile } from '../../lib/types';
-import { weightedAverageRate, effectiveMonthlyPayment } from '../../lib/mortgage-math';
+import { weightedAverageRate, effectiveMonthlyPayment, deriveTrackPayoff } from '../../lib/mortgage-math';
 import { formatCurrency, formatPercent, formatNumber } from '../../lib/utils';
+
 
 interface PortfolioTabProps {
   t: any;
@@ -12,6 +13,15 @@ export function PortfolioTab({ t, profile }: PortfolioTabProps) {
   const [sortField, setSortField] = useState<'name' | 'balance' | 'rate' | 'payment' | 'term'>('balance');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
+  // Live amortization-derived balance (net principal + accrued daily interest as
+  // of today), consistent with the TrackCard header and the TrackForm's "Total
+  // Estimated Payoff". Falls back to the stored principal_balance when a track
+  // isn't fully configured (no original principal/term).
+  const liveBalance = (track: { track_id: string; principal_balance: number; track_type: string; original_principal?: number; original_term_months?: number; remaining_term_months?: number; start_date?: string; first_payout_date?: string; annual_interest_rate?: number; rate_history?: any[] }) => {
+    const derived = deriveTrackPayoff(track as any);
+    return derived ? derived.totalPayoffBalance : track.principal_balance;
+  };
+
   const sortedTracks = [...profile.tracks].sort((a, b) => {
     let comparison = 0;
     switch (sortField) {
@@ -19,7 +29,7 @@ export function PortfolioTab({ t, profile }: PortfolioTabProps) {
         comparison = a.custom_name.localeCompare(b.custom_name);
         break;
       case 'balance':
-        comparison = a.principal_balance - b.principal_balance;
+        comparison = liveBalance(a) - liveBalance(b);
         break;
       case 'rate':
         comparison = a.annual_interest_rate - b.annual_interest_rate;
@@ -35,7 +45,8 @@ export function PortfolioTab({ t, profile }: PortfolioTabProps) {
   });
 
   const weightedRate = weightedAverageRate(profile.tracks);
-  const totalBalance = profile.tracks.reduce((sum, t) => sum + t.principal_balance, 0);
+  const totalBalance = profile.tracks.reduce((sum, t) => sum + liveBalance(t), 0);
+
 
   const getTrackTypeColor = (type: string) => {
     const colors: Record<string, string> = {
@@ -67,15 +78,17 @@ export function PortfolioTab({ t, profile }: PortfolioTabProps) {
         <h3 className="text-lg font-semibold text-text-primary mb-4">{t.portfolio.balanceDistribution}</h3>
         <div className="space-y-3">
           {profile.tracks.map((track) => {
-            const percentage = totalBalance > 0 ? (track.principal_balance / totalBalance) * 100 : 0;
+            const balance = liveBalance(track);
+            const percentage = totalBalance > 0 ? (balance / totalBalance) * 100 : 0;
             return (
               <div key={track.track_id}>
                 <div className="flex justify-between text-sm mb-1">
                   <span className="text-text-primary">{track.custom_name}</span>
                   <span className="text-text-secondary">
-                    {formatCurrency(track.principal_balance)} ({percentage.toFixed(1)}%)
+                    {formatCurrency(balance)} ({percentage.toFixed(1)}%)
                   </span>
                 </div>
+
                 <div className="h-4 bg-bg-surface rounded overflow-hidden">
                   <div
                     className={`h-full ${getTrackTypeColor(track.track_type)}`}
@@ -134,7 +147,8 @@ export function PortfolioTab({ t, profile }: PortfolioTabProps) {
             <tbody>
               {sortedTracks.map((track) => {
                 const effectivePayment = effectiveMonthlyPayment(track);
-                const portfolioPercentage = totalBalance > 0 ? (track.principal_balance / totalBalance) * 100 : 0;
+                const balance = liveBalance(track);
+                const portfolioPercentage = totalBalance > 0 ? (balance / totalBalance) * 100 : 0;
 
                 return (
                   <tr key={track.track_id} className="border-b border-border-subtle">
@@ -145,8 +159,9 @@ export function PortfolioTab({ t, profile }: PortfolioTabProps) {
                       </span>
                     </td>
                     <td className="py-2 px-3 text-right font-mono text-text-primary">
-                      {formatCurrency(track.principal_balance)}
+                      {formatCurrency(balance)}
                     </td>
+
                     <td className="py-2 px-3 text-right font-mono text-text-primary">
                       {formatPercent(track.annual_interest_rate)}
                     </td>
