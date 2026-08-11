@@ -732,16 +732,24 @@ export function computeAmlatPeareiRibit(
 
 
 
-/** Weighted average interest rate across tracks. Returns 0 for an empty/zero-balance portfolio. */
+/**
+ * Weighted average interest rate across tracks. Returns 0 for an empty/zero-balance
+ * portfolio. Weights by the live amortization-derived balance (`liveTrackBalance`)
+ * so a fully-configured track (original principal/term + start date) is weighted by
+ * its current payoff balance rather than the stored `principal_balance` snapshot —
+ * consistent with how `portfolioTotals` computes the total balance. Falls back to
+ * `principal_balance` when a track isn't fully configured.
+ */
 export function weightedAverageRate(tracks: Track[]): number {
-  const totalBalance = tracks.reduce((sum, t) => sum + t.principal_balance, 0);
+  const totalBalance = tracks.reduce((sum, t) => sum + liveTrackBalance(t), 0);
   if (totalBalance <= 0) return 0;
   const weighted = tracks.reduce(
-    (sum, t) => sum + t.principal_balance * t.annual_interest_rate,
+    (sum, t) => sum + liveTrackBalance(t) * t.annual_interest_rate,
     0
   );
   return weighted / totalBalance;
 }
+
 
 /**
  * Spitzer (French/annuity) monthly repayment.
@@ -769,15 +777,24 @@ export function spitzerMonthlyPayment(
 /**
  * The monthly payment actually in effect for a track: the manual override if the
  * user set one, otherwise the Spitzer-calculated payment (PRD §2.2, field 7/8).
+ *
+ * For a fully-configured track (original principal/term + start date) the payment
+ * is the live amortization-derived `currentMonthlyPayment` (recomputed at each BoI
+ * rate change for Prime tracks), so it stays consistent with the balance shown in
+ * the TrackCard / TrackForm / Portfolio tab. Falls back to the single-rate Spitzer
+ * payment at the stored `principal_balance` when the track isn't fully configured.
  */
 export function effectiveMonthlyPayment(track: Track): number {
   if (track.is_payment_manual_override) return track.monthly_repayment;
+  const derived = deriveTrackPayoff(track);
+  if (derived) return derived.currentMonthlyPayment;
   return spitzerMonthlyPayment(
     track.principal_balance,
     track.annual_interest_rate,
     track.remaining_term_months
   );
 }
+
 
 /**
  * Total remaining interest for a fixed balance/payment/term combination.
@@ -794,14 +811,20 @@ export function totalRemainingInterest(
   return monthlyPayment * termMonths - balance;
 }
 
-/** Convenience wrapper: remaining interest for a track using its effective payment. */
+/**
+ * Convenience wrapper: remaining interest for a track using its effective payment.
+ * For a fully-configured track the balance and remaining term are the live
+ * amortization-derived values (consistent with `effectiveMonthlyPayment` and the
+ * balance shown in the UI); otherwise it falls back to the stored
+ * `principal_balance` / `remaining_term_months`.
+ */
 export function remainingInterestForTrack(track: Track): number {
-  return totalRemainingInterest(
-    track.principal_balance,
-    effectiveMonthlyPayment(track),
-    track.remaining_term_months
-  );
+  const derived = deriveTrackPayoff(track);
+  const balance = derived ? derived.netPrincipalBalance : track.principal_balance;
+  const term = derived ? derived.remainingTermMonths : track.remaining_term_months;
+  return totalRemainingInterest(balance, effectiveMonthlyPayment(track), term);
 }
+
 
 export interface PortfolioTotals {
   totalBalance: number;

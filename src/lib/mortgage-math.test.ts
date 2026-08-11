@@ -228,7 +228,47 @@ describe("portfolioTotals", () => {
     expect(totals.totalBalance).toBeCloseTo(live, 5);
   });
 
+  it("KPI functions use the live derived balance when principal_balance is 0 (imported profile)", () => {
+    // Regression: a profile loaded/imported with `original_principal` set but a
+    // zero/missing `principal_balance` snapshot must still produce correct KPIs.
+    // The KPI functions should derive the balance/payment/term from the live
+    // amortization rather than the stored `principal_balance` (which is 0).
+    const imported = makeTrack({
+      track_id: "imported-prime",
+      track_type: "PRIME",
+      principal_balance: 0, // snapshot missing after import
+      original_principal: 500000,
+      original_term_months: 360,
+      start_date: "2023-01-05",
+      first_payout_date: "2023-02-05",
+      annual_interest_rate: 0.05,
+      remaining_term_months: 0, // derived from original term + elapsed
+      rate_history: [
+        { effective_date: "2023-01-05", annual_interest_rate: 0.05 },
+      ],
+    });
+
+    // The live derived balance is non-zero even though principal_balance is 0.
+    expect(liveTrackBalance(imported)).toBeGreaterThan(0);
+
+    // Weighted average rate must be non-zero (weighted by the live balance).
+    expect(weightedAverageRate([imported])).toBeGreaterThan(0);
+
+    // Effective monthly payment must be non-zero (derived from the live balance).
+    expect(effectiveMonthlyPayment(imported)).toBeGreaterThan(0);
+
+    // Remaining interest must be non-zero (derived balance/term/payment).
+    expect(remainingInterestForTrack(imported)).toBeGreaterThan(0);
+
+    // Portfolio KPIs must be non-zero and consistent with the live balance.
+    const totals = portfolioTotals([imported]);
+    expect(totals.totalBalance).toBeCloseTo(liveTrackBalance(imported), 5);
+    expect(totals.weightedRate).toBeGreaterThan(0);
+    expect(totals.blendedMonthlyPayment).toBeGreaterThan(0);
+  });
+
 });
+
 
 
 // ---------------------------------------------------------------------------
