@@ -6,9 +6,10 @@ import { TabBar } from './components/TabBar';
 import { EmptyState } from './components/EmptyState';
 import { ProfileSettings } from './components/ProfileSettings';
 import { PortfolioTab } from './components/tabs/PortfolioTab';
-import { PayoffTab } from './components/tabs/PayoffTab';
+import { EarlyPayoffSimulator } from './components/EarlyPayoffSimulator';
 import { RefinanceTab } from './components/tabs/RefinanceTab';
 import { RecommendationsTab } from './components/tabs/RecommendationsTab';
+
 import { useProfile } from './hooks/useProfile';
 import { useTheme } from './hooks/useTheme';
 import { useBoiRateSync } from './hooks/useBoiRateSync';
@@ -43,7 +44,8 @@ function App() {
       case 'portfolio':
         return <PortfolioTab t={t} profile={profile} />;
       case 'payoff':
-        return <PayoffTab t={t} profile={profile} />;
+        return <EarlyPayoffSimulator t={t} profile={profile} />;
+
       case 'refinance':
         return <RefinanceTab t={t} profile={profile} />;
       case 'recommendations':

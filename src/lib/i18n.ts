@@ -86,10 +86,13 @@ interface Translations {
     totalPayoffOutlay: string;
     guaranteedInterestSaved: string;
     monthlyCashflowRelief: string;
+    newMonthlyPayment: string;
+    newTerm: string;
     disclaimer: string;
     disclaimerText: string;
     noticeWaivedNote: string;
   };
+
 
   refinance: {
     title: string;
@@ -262,7 +265,10 @@ const translations: Record<Language, Translations> = {
       totalPayoffOutlay: 'Total Payoff Outlay',
       guaranteedInterestSaved: 'Guaranteed Interest Saved',
       monthlyCashflowRelief: 'Monthly Cashflow Relief',
+      newMonthlyPayment: 'New Monthly Payment',
+      newTerm: 'New Term',
       disclaimer: 'Disclaimer:',
+
 
       disclaimerText: 'Mortgage payoff is a guaranteed, risk-free return. Market investment returns are not guaranteed. This comparison does not account for capital gains tax, or your personal risk tolerance.',
       noticeWaivedNote: 'Notice fee waived — 10-day advance notice rule (Amlat Hoda\'a Mukdamet) applied.',
@@ -436,7 +442,10 @@ const translations: Record<Language, Translations> = {
       totalPayoffOutlay: 'הוצאה כוללת לפרעון',
       guaranteedInterestSaved: 'ריבית מובטחת שנחסכה',
       monthlyCashflowRelief: 'הקלה בתזרים חודשי',
+      newMonthlyPayment: 'החזר חודשי חדש',
+      newTerm: 'תקופה חדשה',
       disclaimer: 'כתב ויתור:',
+
 
       disclaimerText: 'פרעון משכנתא הוא תשואה מובטחת ללא סיכון. תשואות השקעה בשוק אינן מובטחות. השוואה זו אינה לוקחת בחשבון מס הכנסות הון, את סיבולת הסיכון האישית שלך.',
       noticeWaivedNote: 'עמלת הודעה מבוטלת — חוק הודעה מוקדמת (עמלת הודעה מוקדמת) הוחל.',
