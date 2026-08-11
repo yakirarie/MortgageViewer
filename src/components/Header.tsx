@@ -1,5 +1,6 @@
 import type { Profile } from '../lib/types';
-import { getRatesAsOfDate, isRatesCurrent, formatFullDateTime, formatLastUpdated } from '../lib/rates-api';
+import { getRatesAsOfDate, isRatesCurrent, formatFullDateTime } from '../lib/rates-api';
+
 import type { BoiSyncStatus } from '../hooks/useBoiRateSync';
 
 
@@ -31,22 +32,15 @@ export function Header({
   language,
   onToggleLanguage,
   t,
-  primeRate,
-  lastSyncTime,
-  isStale,
   syncStatus,
   onRefreshRates,
 }: HeaderProps) {
+
   const ratesAsOf = getRatesAsOfDate();
   const ratesCurrent = isRatesCurrent();
   const ratesAsOfLabel = formatFullDateTime(ratesAsOf);
-
-  const primeLabel =
-    primeRate !== null && primeRate !== undefined
-      ? `${(primeRate * 100).toFixed(2)}%`
-      : null;
-  const lastSyncLabel = lastSyncTime ? formatLastUpdated(lastSyncTime) : null;
   const syncing = syncStatus === 'syncing';
+
 
   return (
     <header className="bg-bg-surface border-b border-border-subtle px-6 py-4">
@@ -62,34 +56,18 @@ export function Header({
         </div>
         
         <div className="flex items-center gap-3">
-          {/* Rate data freshness indicator */}
+          {/* Rate data freshness indicator — all rates rely on the same BOI decision date */}
           <span
             className={`text-xs px-2 py-1 rounded border ${
               ratesCurrent
                 ? 'text-success border-success/40 bg-success/10'
                 : 'text-accent-warning border-accent-warning/40 bg-accent-warning/10'
             }`}
-            title={`Bank of Israel base rate data as of ${ratesAsOfLabel}. ${ratesCurrent ? 'Current.' : 'May be outdated — update the rate table in src/lib/rates-api.ts.'}`}
+            title={`All rate data in this tool — Bank of Israel base rate, Prime rate, and accrued interest — is based on the Bank of Israel decision of ${ratesAsOfLabel}. ${ratesCurrent ? 'Current.' : 'May be outdated — refresh to update.'}`}
           >
-            {ratesCurrent ? '✓' : '⚠'} Rates as of {ratesAsOfLabel}
+            {ratesCurrent ? '✓' : '⚠'} All rates (BOI, Prime, Accrued Interest) as of {ratesAsOfLabel}
           </span>
 
-          {/* BOI Prime rate sync indicator + refresh button */}
-          <span
-            className={`text-xs px-2 py-1 rounded border ${
-              isStale
-                ? 'text-accent-warning border-accent-warning/40 bg-accent-warning/10'
-                : 'text-success border-success/40 bg-success/10'
-            }`}
-            title={
-              lastSyncLabel
-                ? `Prime rate synced ${lastSyncLabel}. ${isStale ? 'Stale — refresh to update.' : 'Up to date.'}`
-                : 'Prime rate not synced yet.'
-            }
-          >
-            {primeLabel ? `Prime: ${primeLabel}` : 'Prime: —'}
-            {lastSyncLabel ? ` (${lastSyncLabel})` : ''}
-          </span>
 
           <button
             onClick={onRefreshRates}
