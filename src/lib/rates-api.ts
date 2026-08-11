@@ -90,10 +90,28 @@ export const BOI_BASE_RATE_HISTORY: { date: string; base_rate: number }[] = [
   { date: "2017-01-26", base_rate: 0.001 },
 ];
 
-/** The most recent BoI base rate in the table. */
+/**
+ * A dynamically-synced override for the "current" BoI base rate, sourced from
+ * the client-side BOI rate store (see src/services/boiSyncService.ts). When set,
+ * `getCurrentBaseRate()` prefers this value over the static table. This lets the
+ * Prime calculation engine consume the latest synced rate automatically while
+ * still falling back to the bundled static history when no sync has happened.
+ */
+let dynamicBaseRate: number | null = null;
+
+/** Set (or clear, with null) the dynamically-synced current BoI base rate. */
+export function setDynamicBaseRate(rate: number | null): void {
+  dynamicBaseRate = rate;
+}
+
+/** The most recent BoI base rate — dynamic override first, else the static table. */
 export function getCurrentBaseRate(): number {
+  if (dynamicBaseRate !== null && Number.isFinite(dynamicBaseRate)) {
+    return dynamicBaseRate;
+  }
   return BOI_BASE_RATE_HISTORY[0].base_rate;
 }
+
 
 /**
  * The date of the most recent BoI base-rate decision in the table. This is the

@@ -10,8 +10,10 @@ import {
   primeEffectiveRate,
   populatePrimeRateHistory,
   getBoiAverageRate,
+  setDynamicBaseRate,
   BOI_BASE_RATE_HISTORY,
 } from "./rates-api";
+
 
 
 
@@ -42,7 +44,22 @@ describe("getCurrentBaseRate", () => {
   it("returns the latest BoI base rate", () => {
     expect(getCurrentBaseRate()).toBe(0.035);
   });
+
+  it("prefers the dynamically-synced base rate when set", () => {
+    setDynamicBaseRate(0.03);
+    expect(getCurrentBaseRate()).toBe(0.03);
+    // Clear the override so it doesn't leak into other tests.
+    setDynamicBaseRate(null);
+    expect(getCurrentBaseRate()).toBe(0.035);
+  });
+
+  it("ignores a non-finite dynamic override and falls back to the table", () => {
+    setDynamicBaseRate(NaN);
+    expect(getCurrentBaseRate()).toBe(0.035);
+    setDynamicBaseRate(null);
+  });
 });
+
 
 describe("getRatesAsOfDate", () => {
   it("returns the date of the latest BoI base-rate entry", () => {

@@ -1,5 +1,6 @@
 import type { Profile } from '../lib/types';
-import { getRatesAsOfDate, isRatesCurrent, formatFullDateTime } from '../lib/rates-api';
+import { getRatesAsOfDate, isRatesCurrent, formatFullDateTime, formatLastUpdated } from '../lib/rates-api';
+import type { BoiSyncStatus } from '../hooks/useBoiRateSync';
 
 
 interface HeaderProps {
@@ -10,12 +11,42 @@ interface HeaderProps {
   language: 'en' | 'he';
   onToggleLanguage: () => void;
   t: any;
+  /** Active Prime rate (boi_rate + 1.5%) from the synced store, or null. */
+  primeRate?: number | null;
+  /** ISO timestamp of the last successful BOI rate sync, or null. */
+  lastSyncTime?: string | null;
+  /** Whether the cached BOI rates are stale. */
+  isStale?: boolean;
+  /** Current BOI sync status. */
+  syncStatus?: BoiSyncStatus;
+  /** Manually trigger a BOI rate sync. */
+  onRefreshRates?: () => void;
 }
 
-export function Header({ onProfileSettings, profile, theme, onToggleTheme, language, onToggleLanguage, t }: HeaderProps) {
+export function Header({
+  onProfileSettings,
+  profile,
+  theme,
+  onToggleTheme,
+  language,
+  onToggleLanguage,
+  t,
+  primeRate,
+  lastSyncTime,
+  isStale,
+  syncStatus,
+  onRefreshRates,
+}: HeaderProps) {
   const ratesAsOf = getRatesAsOfDate();
   const ratesCurrent = isRatesCurrent();
   const ratesAsOfLabel = formatFullDateTime(ratesAsOf);
+
+  const primeLabel =
+    primeRate !== null && primeRate !== undefined
+      ? `${(primeRate * 100).toFixed(2)}%`
+      : null;
+  const lastSyncLabel = lastSyncTime ? formatLastUpdated(lastSyncTime) : null;
+  const syncing = syncStatus === 'syncing';
 
   return (
     <header className="bg-bg-surface border-b border-border-subtle px-6 py-4">
@@ -42,6 +73,32 @@ export function Header({ onProfileSettings, profile, theme, onToggleTheme, langu
           >
             {ratesCurrent ? '✓' : '⚠'} Rates as of {ratesAsOfLabel}
           </span>
+
+          {/* BOI Prime rate sync indicator + refresh button */}
+          <span
+            className={`text-xs px-2 py-1 rounded border ${
+              isStale
+                ? 'text-accent-warning border-accent-warning/40 bg-accent-warning/10'
+                : 'text-success border-success/40 bg-success/10'
+            }`}
+            title={
+              lastSyncLabel
+                ? `Prime rate synced ${lastSyncLabel}. ${isStale ? 'Stale — refresh to update.' : 'Up to date.'}`
+                : 'Prime rate not synced yet.'
+            }
+          >
+            {primeLabel ? `Prime: ${primeLabel}` : 'Prime: —'}
+            {lastSyncLabel ? ` (${lastSyncLabel})` : ''}
+          </span>
+
+          <button
+            onClick={onRefreshRates}
+            disabled={syncing}
+            className="px-3 py-1.5 bg-bg-surface-raised border border-border-subtle rounded text-text-primary hover:border-accent-info text-xs disabled:opacity-50"
+            title="Refresh Bank of Israel prime rates"
+          >
+            {syncing ? 'Syncing…' : '↻ Refresh BOI Rates'}
+          </button>
 
           <button
             onClick={onProfileSettings}
