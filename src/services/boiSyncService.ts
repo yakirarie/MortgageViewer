@@ -24,13 +24,27 @@ import fallbackRates from "../data/boiRatesFallback.json";
 /** How old a sync must be (in days) before the cache is considered stale. */
 export const STALE_AFTER_DAYS = 7;
 
-/** CORS-friendly public endpoints to try, in order. */
+/**
+ * CORS-friendly public endpoints to try, in order.
+ *
+ * Direct browser requests to data.gov.il / boi.org.il are blocked by CORS and
+ * often 404, so we route through public CORS proxies that wrap the BOI SDMX
+ * interest-rate dataflow. Each entry is a fully-qualified URL the browser can
+ * fetch without a preflight failure.
+ */
 export const BOI_SYNC_ENDPOINTS: string[] = [
-  // Data.gov.il CKAN API — returns a JSON package with the BOI interest-rate
-  // resource. CORS-friendly. (Endpoint is illustrative; the parser normalizes
-  // whatever shape the resource returns.)
-  "https://data.gov.il/api/3/action/package_show?id=bank-of-israel-interest-rates",
+  // allorigins.win raw proxy → BOI SDMX interest-rate dataflow.
+  "https://api.allorigins.win/raw?url=" +
+    encodeURIComponent(
+      "https://www.boi.org.il/sdmx/3.0/data/dataflow/BOI/IR/1.0/IR.IR.IR?startPeriod=2015"
+    ),
+  // corsproxy.io proxy → same BOI SDMX dataflow (secondary).
+  "https://corsproxy.io/?url=" +
+    encodeURIComponent(
+      "https://www.boi.org.il/sdmx/3.0/data/dataflow/BOI/IR/1.0/IR.IR.IR?startPeriod=2015"
+    ),
 ];
+
 
 /**
  * Normalize an arbitrary fetched payload into BoiRateRecord[].
@@ -113,11 +127,13 @@ export async function fetchRemoteBoiRates(
       const records = normalizeBoiRates(payload);
       if (records.length > 0) return records;
     } catch {
-      // Try the next endpoint.
+      // Network/CORS error — try the next endpoint. Never let the rejection
+      // propagate to the console as an unhandled promise.
     }
   }
   return null;
 }
+
 
 /** Load the bundled static fallback dataset as BoiRateRecord[]. */
 export function loadFallbackRates(): BoiRateRecord[] {
@@ -159,10 +175,16 @@ export async function syncBoiRates(
     records = remote;
     source = "remote";
   } else {
-    // 2. Fall back to the bundled static dataset.
+    // 2. Fall back to the bundled static dataset. Log a single clean warning so
+    // the user knows the remote source was unavailable (CORS/404/offline) without
+    // leaking a red network error to the console.
+    console.warn(
+      "[BOI Sync] Remote fetch unavailable (CORS/404). Using local fallback seed dataset."
+    );
     records = loadFallbackRates();
     source = "fallback";
   }
+
 
   // 3. Idempotent upsert (keyed by effective_date).
   const recordsWritten = upsertBoiRates(records);
