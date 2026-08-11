@@ -21,7 +21,9 @@ import {
   simulatePrimeAmortization,
   simulateFixedAmortization,
   deriveTrackPayoff,
+  liveTrackBalance,
   fixedTrackGapPenalty,
+
   nextResetDate,
   monthsToNextReset,
   totalExitCost,
@@ -199,7 +201,35 @@ describe("portfolioTotals", () => {
     // total should equal Prime's remaining interest alone, not include the bad track
     expect(totals.totalRemainingInterest).toBeCloseTo(283007.32, 0);
   });
+
+  it("total balance uses the live total payoff balance for fully-configured tracks", () => {
+    // A fully-configured fixed track (original principal/term + start date) has a
+    // live total payoff balance derived from its amortization (net principal +
+    // accrued daily interest), so the portfolio total must equal the sum of those
+    // live balances — not the stored principal_balance snapshot.
+    const fixed = makeTrack({
+      track_id: "fixed-live",
+      track_type: "FIXED_UNLINKED",
+      principal_balance: 800000,
+      original_principal: 800000,
+      original_term_months: 360,
+      start_date: "2023-09-13",
+      first_payout_date: "2023-10-10",
+      annual_interest_rate: 0.049,
+      remaining_term_months: 326,
+    });
+    const live = liveTrackBalance(fixed);
+    // The loan has amortized down over the elapsed months, so the live balance is
+    // below the original principal but still includes accrued daily interest.
+    expect(live).toBeLessThan(fixed.principal_balance);
+    expect(live).toBeGreaterThan(0);
+
+    const totals = portfolioTotals([fixed]);
+    expect(totals.totalBalance).toBeCloseTo(live, 5);
+  });
+
 });
+
 
 // ---------------------------------------------------------------------------
 // §4.2 Early Payoff — Net Payoff Benefit

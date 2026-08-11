@@ -814,8 +814,21 @@ export interface PortfolioTotals {
 }
 
 /** Portfolio-level KPI row values (PRD §3.1). */
+/**
+ * The live total payoff balance for a track (net principal + accrued daily
+ * interest as of today), consistent with the TrackCard header, the TrackForm's
+ * "Total Estimated Payoff", and the Portfolio tab. Falls back to the stored
+ * `principal_balance` when the track isn't fully configured (no original
+ * principal/term) so the value is always defined.
+ */
+export function liveTrackBalance(track: Track): number {
+  const derived = deriveTrackPayoff(track);
+  return derived ? derived.totalPayoffBalance : track.principal_balance;
+}
+
 export function portfolioTotals(tracks: Track[]): PortfolioTotals {
-  const totalBalance = tracks.reduce((sum, t) => sum + t.principal_balance, 0);
+  const totalBalance = tracks.reduce((sum, t) => sum + liveTrackBalance(t), 0);
+
   const blendedMonthlyPayment = tracks.reduce(
     (sum, t) => sum + effectiveMonthlyPayment(t),
     0
