@@ -23,8 +23,18 @@ import fallbackRates from "../data/boiRatesFallback.json";
 /** How old a sync must be (in days) before the cache is considered stale. */
 export const STALE_AFTER_DAYS = 7;
 
-/** Same-origin static data file produced by the BOI sync GitHub Action. */
-export const BOI_DATA_URL = "/data/boiRates.json";
+/**
+ * Same-origin static data file produced by the BOI sync GitHub Action.
+ *
+ * Resolved via Vite's BASE_URL so it works whether the app is served from a
+ * custom domain, root domain, or a GitHub Pages repository subdirectory
+ * (https://<username>.github.io/<repo-name>/).
+ */
+export const BOI_DATA_URL = `${import.meta.env.BASE_URL}data/boiRates.json`.replace(
+  /\/+/g,
+  "/"
+);
+
 
 /**
  * Normalize an arbitrary fetched payload into BoiRateRecord[].
