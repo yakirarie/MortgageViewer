@@ -30,14 +30,11 @@ export function derivePrimeRate(boiRate: number): number {
 
 /** Result of a sync attempt. */
 export interface BoiSyncResult {
+  /** Whether the sync succeeded (data was fetched and stored). */
+  success: boolean;
   /** Number of records written to the store. */
-  recordsWritten: number;
-  /** The latest prime rate after the sync, or null if none. */
-  latestPrimeRate: number | null;
-  /** The effective_date of the latest record after the sync, or null. */
-  latestRateDate: string | null;
-  /** ISO timestamp of the sync. */
-  syncedAt: string;
-  /** Source that produced the data ("remote" | "fallback"). */
-  source: "remote" | "fallback";
+  count: number;
+  /** Whether the sync fell back to the bundled seed dataset. */
+  isFallback: boolean;
 }
+

@@ -1,10 +1,10 @@
 // Client-side Bank of Israel (BOI) rate sync service.
 //
-// Attempts to fetch the latest BOI rate decisions from a CORS-friendly public
-// endpoint (Data.gov.il CKAN API / static JSON). If the fetch fails, is blocked
-// by CORS, or the device is offline, it falls back gracefully to the bundled
-// static dataset (src/data/boiRatesFallback.json) and/or whatever is already in
-// local storage.
+// The browser never talks to external BOI/data.gov.il endpoints directly (those
+// are blocked by CORS and often 404). Instead, a scheduled GitHub Action fetches
+// and parses the BOI Excel sheet server-side and commits the result to
+// `public/data/boiRates.json`. This service simply fetches that same-origin
+// static file and upserts it into local storage.
 //
 // Every ingested record enforces the derivation rule:
 //   prime_rate = Number((boi_rate + 0.015).toFixed(4))
@@ -15,7 +15,6 @@ import {
   getAllBoiRates,
   getLastSyncTime,
   getLatestPrimeRate,
-  getLatestRateDate,
   setLastSyncTime,
   upsertBoiRates,
 } from "./boiStorage";
@@ -24,38 +23,15 @@ import fallbackRates from "../data/boiRatesFallback.json";
 /** How old a sync must be (in days) before the cache is considered stale. */
 export const STALE_AFTER_DAYS = 7;
 
-/**
- * CORS-friendly public endpoints to try, in order.
- *
- * Direct browser requests to data.gov.il / boi.org.il are blocked by CORS and
- * often 404, so we route through public CORS proxies that wrap the BOI SDMX
- * interest-rate dataflow. Each entry is a fully-qualified URL the browser can
- * fetch without a preflight failure.
- */
-export const BOI_SYNC_ENDPOINTS: string[] = [
-  // allorigins.win raw proxy → BOI SDMX interest-rate dataflow.
-  "https://api.allorigins.win/raw?url=" +
-    encodeURIComponent(
-      "https://www.boi.org.il/sdmx/3.0/data/dataflow/BOI/IR/1.0/IR.IR.IR?startPeriod=2015"
-    ),
-  // corsproxy.io proxy → same BOI SDMX dataflow (secondary).
-  "https://corsproxy.io/?url=" +
-    encodeURIComponent(
-      "https://www.boi.org.il/sdmx/3.0/data/dataflow/BOI/IR/1.0/IR.IR.IR?startPeriod=2015"
-    ),
-];
-
+/** Same-origin static data file produced by the BOI sync GitHub Action. */
+export const BOI_DATA_URL = "/data/boiRates.json";
 
 /**
  * Normalize an arbitrary fetched payload into BoiRateRecord[].
  *
- * Accepts several shapes so the sync is resilient to endpoint changes:
- *   - An array of { effective_date, boi_rate } / { date, base_rate } objects
- *   - A CKAN-style { result: { resources: [...] } } wrapper (best-effort)
- *   - A { rates: [...] } wrapper
- *
- * Records missing a valid date or numeric rate are skipped. The prime rate is
- * always recomputed via the derivation rule.
+ * Accepts an array of { effective_date, boi_rate } / { date, base_rate } objects
+ * or a { rates: [...] } wrapper. Records missing a valid date or numeric rate are
+ * skipped. The prime rate is always recomputed via the derivation rule.
  */
 export function normalizeBoiRates(payload: unknown): BoiRateRecord[] {
   let list: unknown[] = [];
@@ -65,22 +41,6 @@ export function normalizeBoiRates(payload: unknown): BoiRateRecord[] {
   } else if (payload && typeof payload === "object") {
     const obj = payload as Record<string, unknown>;
     if (Array.isArray(obj.rates)) list = obj.rates;
-    else if (Array.isArray(obj.result)) list = obj.result;
-    else if (obj.result && typeof obj.result === "object") {
-      const res = obj.result as Record<string, unknown>;
-      if (Array.isArray(res.resources)) {
-        // CKAN package_show → resources are file descriptors, not rate rows.
-        // Best-effort: if a resource carries a `rates` array, use it.
-        for (const r of res.resources) {
-          if (r && typeof r === "object" && Array.isArray((r as Record<string, unknown>).rates)) {
-            list = (r as Record<string, unknown>).rates as unknown[];
-            break;
-          }
-        }
-      } else if (Array.isArray(res.records)) {
-        list = res.records;
-      }
-    }
   }
 
   const records: BoiRateRecord[] = [];
@@ -112,29 +72,6 @@ export function normalizeBoiRates(payload: unknown): BoiRateRecord[] {
   return records;
 }
 
-/**
- * Attempt to fetch BOI rate decisions from the remote endpoints. Returns the
- * normalized records, or null if every endpoint failed (network/CORS/offline).
- */
-export async function fetchRemoteBoiRates(
-  fetcher: typeof fetch = fetch
-): Promise<BoiRateRecord[] | null> {
-  for (const url of BOI_SYNC_ENDPOINTS) {
-    try {
-      const res = await fetcher(url);
-      if (!res.ok) continue;
-      const payload = await res.json();
-      const records = normalizeBoiRates(payload);
-      if (records.length > 0) return records;
-    } catch {
-      // Network/CORS error — try the next endpoint. Never let the rejection
-      // propagate to the console as an unhandled promise.
-    }
-  }
-  return null;
-}
-
-
 /** Load the bundled static fallback dataset as BoiRateRecord[]. */
 export function loadFallbackRates(): BoiRateRecord[] {
   return (fallbackRates as BoiRateRecord[]).map((r) => ({
@@ -158,47 +95,27 @@ export function isCacheStale(now: Date = new Date()): boolean {
 }
 
 /**
- * Run a full sync: fetch remote → fall back to bundled data → upsert into the
- * store → record the sync time. Returns a BoiSyncResult describing what happened.
+ * Run a full sync: fetch the same-origin static data file, upsert it into the
+ * store, and record the sync time. On any failure (missing file, HTTP error,
+ * malformed payload) it logs a clean warning and reports a fallback result.
  */
-export async function syncBoiRates(
-  fetcher: typeof fetch = fetch
-): Promise<BoiSyncResult> {
-  const syncedAt = new Date().toISOString();
+export async function syncBoiRates(): Promise<BoiSyncResult> {
+  try {
+    const response = await fetch(BOI_DATA_URL);
+    if (!response.ok) throw new Error(`HTTP error ${response.status}`);
 
-  // 1. Try the remote source.
-  const remote = await fetchRemoteBoiRates(fetcher);
-  let records: BoiRateRecord[];
-  let source: BoiSyncResult["source"];
+    const payload: unknown = await response.json();
+    const records = normalizeBoiRates(payload);
+    if (records.length === 0) throw new Error("No valid records in /data/boiRates.json");
 
-  if (remote && remote.length > 0) {
-    records = remote;
-    source = "remote";
-  } else {
-    // 2. Fall back to the bundled static dataset. Log a single clean warning so
-    // the user knows the remote source was unavailable (CORS/404/offline) without
-    // leaking a red network error to the console.
-    console.warn(
-      "[BOI Sync] Remote fetch unavailable (CORS/404). Using local fallback seed dataset."
-    );
-    records = loadFallbackRates();
-    source = "fallback";
+    const count = upsertBoiRates(records);
+    setLastSyncTime(new Date().toISOString());
+
+    return { success: true, count, isFallback: false };
+  } catch (error) {
+    console.warn("[BOI Sync] Local static data fetch failed:", error);
+    return { success: false, count: 0, isFallback: true };
   }
-
-
-  // 3. Idempotent upsert (keyed by effective_date).
-  const recordsWritten = upsertBoiRates(records);
-
-  // 4. Record the sync time so the stale check has a reference point.
-  setLastSyncTime(syncedAt);
-
-  return {
-    recordsWritten,
-    latestPrimeRate: getLatestPrimeRate(),
-    latestRateDate: getLatestRateDate(),
-    syncedAt,
-    source,
-  };
 }
 
 /** Convenience: the current active prime rate from the store (or null). */

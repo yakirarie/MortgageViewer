@@ -38,11 +38,12 @@ export interface UseBoiRateSyncResult {
   isStale: boolean;
   /** Current sync status. */
   status: BoiSyncStatus;
-  /** Source of the last sync ("remote" | "fallback"), or null. */
-  lastSource: BoiSyncResult["source"] | null;
+  /** Whether the last sync fell back to the bundled seed dataset, or null. */
+  lastSyncFallback: boolean | null;
   /** Manually trigger a sync (used by the "Refresh BOI Rates" button). */
   refresh: () => Promise<BoiSyncResult>;
 }
+
 
 export function useBoiRateSync(): UseBoiRateSyncResult {
   const [primeRate, setPrimeRate] = useState<number | null>(() => getLatestPrimeRate());
@@ -53,7 +54,8 @@ export function useBoiRateSync(): UseBoiRateSyncResult {
   const [latestRateDate, setLatestRateDate] = useState<string | null>(() => getLatestRateDate());
   const [lastSyncTime, setLastSyncTimeState] = useState<string | null>(() => getLastSyncTime());
   const [status, setStatus] = useState<BoiSyncStatus>("idle");
-  const [lastSource, setLastSource] = useState<BoiSyncResult["source"] | null>(null);
+  const [lastSyncFallback, setLastSyncFallback] = useState<boolean | null>(null);
+
 
   const isStale = useMemo(() => isCacheStale(), [lastSyncTime]);
 
@@ -68,8 +70,9 @@ export function useBoiRateSync(): UseBoiRateSyncResult {
       });
       setLatestRateDate(getLatestRateDate());
       setLastSyncTimeState(getLastSyncTime());
-      setLastSource(result.source);
+      setLastSyncFallback(result.isFallback);
       setStatus("synced");
+
       return result;
     } catch {
       setStatus("error");
@@ -113,7 +116,8 @@ export function useBoiRateSync(): UseBoiRateSyncResult {
     lastSyncTime,
     isStale,
     status,
-    lastSource,
+    lastSyncFallback,
     refresh,
   };
 }
+

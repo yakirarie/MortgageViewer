@@ -1,13 +1,13 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import {
   normalizeBoiRates,
   loadFallbackRates,
   isCacheStale,
   syncBoiRates,
-  fetchRemoteBoiRates,
   getActivePrimeRate,
   getActiveBoiRate,
   STALE_AFTER_DAYS,
+  BOI_DATA_URL,
 } from "./boiSyncService";
 import { derivePrimeRate } from "./boiTypes";
 import {
@@ -116,71 +116,80 @@ describe("isCacheStale", () => {
   });
 });
 
-describe("fetchRemoteBoiRates", () => {
-  it("returns normalized records when the fetch succeeds", async () => {
-    const fetcher = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => [{ effective_date: "2026-08-01", boi_rate: 0.03 }],
-    });
-    const records = await fetchRemoteBoiRates(fetcher as unknown as typeof fetch);
-    expect(records).not.toBeNull();
-    expect(records![0].prime_rate).toBeCloseTo(0.045);
-  });
-
-  it("returns null when the fetch fails or is blocked", async () => {
-    const fetcher = vi.fn().mockRejectedValue(new Error("network"));
-    const records = await fetchRemoteBoiRates(fetcher as unknown as typeof fetch);
-    expect(records).toBeNull();
-  });
-
-  it("returns null when the response is not ok", async () => {
-    const fetcher = vi.fn().mockResolvedValue({ ok: false, json: async () => [] });
-    const records = await fetchRemoteBoiRates(fetcher as unknown as typeof fetch);
-    expect(records).toBeNull();
-  });
-});
-
 describe("syncBoiRates", () => {
+  const originalFetch = globalThis.fetch;
+
   beforeEach(() => {
     clearBoiRates();
   });
 
-  it("falls back to the bundled dataset when the remote fetch fails", async () => {
-    const fetcher = vi.fn().mockRejectedValue(new Error("offline"));
-    const result = await syncBoiRates(fetcher as unknown as typeof fetch);
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
 
-    expect(result.source).toBe("fallback");
-    expect(result.recordsWritten).toBeGreaterThan(0);
-    expect(result.latestPrimeRate).toBeCloseTo(0.05);
-    expect(result.latestRateDate).toBe("2026-07-09");
+  it("fetches the same-origin static file and upserts records on success", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [
+        { effective_date: "2026-08-01", boi_rate: 0.03 },
+        { effective_date: "2026-07-09", boi_rate: 0.035 },
+      ],
+    }) as unknown as typeof fetch;
+
+    const result = await syncBoiRates();
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(BOI_DATA_URL);
+    expect(result.success).toBe(true);
+    expect(result.isFallback).toBe(false);
+    expect(result.count).toBeGreaterThan(0);
+    expect(getAllBoiRates().length).toBeGreaterThan(0);
     expect(getLastSyncTime()).not.toBeNull();
   });
 
-  it("uses remote data when the fetch succeeds", async () => {
-    const fetcher = vi.fn().mockResolvedValue({
+  it("returns a fallback result when the fetch fails", async () => {
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error("offline")) as unknown as typeof fetch;
+
+    const result = await syncBoiRates();
+
+    expect(result.success).toBe(false);
+    expect(result.isFallback).toBe(true);
+    expect(result.count).toBe(0);
+  });
+
+  it("returns a fallback result when the response is not ok", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => [],
+    }) as unknown as typeof fetch;
+
+    const result = await syncBoiRates();
+
+    expect(result.success).toBe(false);
+    expect(result.isFallback).toBe(true);
+  });
+
+  it("returns a fallback result when the payload has no valid records", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [{ effective_date: "bad", boi_rate: "nope" }],
+    }) as unknown as typeof fetch;
+
+    const result = await syncBoiRates();
+
+    expect(result.success).toBe(false);
+    expect(result.isFallback).toBe(true);
+  });
+
+  it("exposes the active prime and boi rates after a successful sync", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => [{ effective_date: "2026-08-01", boi_rate: 0.03 }],
-    });
-    const result = await syncBoiRates(fetcher as unknown as typeof fetch);
+    }) as unknown as typeof fetch;
 
-    expect(result.source).toBe("remote");
-    expect(result.latestPrimeRate).toBeCloseTo(0.045);
-    expect(result.latestRateDate).toBe("2026-08-01");
-  });
-
-  it("is idempotent — running twice does not duplicate records", async () => {
-    const fetcher = vi.fn().mockRejectedValue(new Error("offline"));
-    await syncBoiRates(fetcher as unknown as typeof fetch);
-    const firstCount = getAllBoiRates().length;
-    await syncBoiRates(fetcher as unknown as typeof fetch);
-    const secondCount = getAllBoiRates().length;
-    expect(secondCount).toBe(firstCount);
-  });
-
-  it("exposes the active prime and boi rates after syncing", async () => {
-    const fetcher = vi.fn().mockRejectedValue(new Error("offline"));
-    await syncBoiRates(fetcher as unknown as typeof fetch);
-    expect(getActivePrimeRate()).toBeCloseTo(0.05);
-    expect(getActiveBoiRate()).toBeCloseTo(0.035);
+    await syncBoiRates();
+    expect(getActivePrimeRate()).toBeCloseTo(0.045);
+    expect(getActiveBoiRate()).toBeCloseTo(0.03);
   });
 });

@@ -11,7 +11,6 @@ import {
   upsertBoiRates,
 } from "../services/boiStorage";
 
-
 // Module-scoped values the mocked sync writes into the store, so tests can
 // control what the hook observes after a sync. The default date (2026-06-01) is
 // older than the fallback's newest entry (2026-07-09), so the fallback remains
@@ -35,17 +34,10 @@ vi.mock("../services/boiSyncService", async (importOriginal) => {
         },
       ]);
       setLastSyncTime();
-      return {
-        recordsWritten: 1,
-        latestPrimeRate: mockSyncRate + 0.015,
-        latestRateDate: mockSyncDate,
-        syncedAt: new Date().toISOString(),
-        source: "remote",
-      };
+      return { success: true, count: 1, isFallback: false };
     }),
   };
 });
-
 
 import { syncBoiRates as mockSyncBoiRates } from "../services/boiSyncService";
 
@@ -83,7 +75,6 @@ describe("useBoiRateSync", () => {
     mockSyncDate = "2026-08-01";
     await result.current.refresh();
 
-
     expect(mockSyncBoiRates).toHaveBeenCalled();
     // The store now holds the synced record (0.03 base → 0.045 prime). Wait for
     // React to flush the state update from the refresh.
@@ -91,8 +82,7 @@ describe("useBoiRateSync", () => {
       expect(result.current.primeRate).toBeCloseTo(0.045);
     });
     expect(result.current.latestRateDate).toBe("2026-08-01");
-    expect(result.current.lastSource).toBe("remote");
-
+    expect(result.current.lastSyncFallback).toBe(false);
   });
 
   it("records the last sync time and clears the stale flag after a sync", async () => {

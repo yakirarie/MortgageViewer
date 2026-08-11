@@ -1,0 +1,32 @@
+name: Sync BOI Rates from Excel
+
+on:
+  schedule:
+    # Runs every Monday at 16:30 IDT (13:30 UTC)
+    - cron: '30 13 * * 1'
+  workflow_dispatch: # Allows manual run trigger from GitHub UI
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Fetch and parse BOI Excel file
+        run: node scripts/updateBoiRates.mjs
+
+      - name: Commit and push changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore(data): auto-update BOI prime rate history from bointcre_m.xls"
+          file_pattern: "public/data/boiRates.json"
