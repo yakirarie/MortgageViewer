@@ -39,7 +39,11 @@ export function Header({
   const ratesAsOf = getRatesAsOfDate();
   const ratesCurrent = isRatesCurrent();
   const ratesAsOfLabel = formatFullDateTime(ratesAsOf);
+  // The general message reflects the date used to compute accrued interest
+  // (today), while the BOI decision date is shown only in the hover tooltip.
+  const todayLabel = formatFullDateTime(new Date());
   const syncing = syncStatus === 'syncing';
+
 
 
   return (
@@ -65,7 +69,8 @@ export function Header({
             }`}
             title={`All rate data in this tool — Bank of Israel base rate, Prime rate, and accrued interest — is based on the Bank of Israel decision of ${ratesAsOfLabel}. ${ratesCurrent ? 'Current.' : 'May be outdated — refresh to update.'}`}
           >
-            {ratesCurrent ? '✓' : '⚠'} All rates (BOI, Prime, Accrued Interest) as of {ratesAsOfLabel}
+            {ratesCurrent ? '✓' : '⚠'} All rates (BOI, Prime, Accrued Interest) as of {todayLabel}
+
           </span>
 
 
