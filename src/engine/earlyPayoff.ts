@@ -30,20 +30,50 @@ export type { PayoffReductionMode };
 // ---------------------------------------------------------------------------
 
 /**
+ * The statutory operational fee (Amlat Hotza'ot Tipuliyot) charged per active
+ * track on early payoff. Fixed at ₪60 per the Bank of Israel schedule, but
+ * falls back to the value stored in the profile when the user has entered a
+ * custom figure.
+ */
+export function computeOperationalFee(track: Track): number {
+  const fee = track.operational_fee ?? 60;
+  return Number.isFinite(fee) && fee > 0 ? fee : 60;
+}
+
+/**
  * The notice fee due on an early payoff.
  *
  *   hasAdvanceNotice === true  → 0.0% (10+ days advance notice given)
  *   hasAdvanceNotice === false → 0.1% of the principal paid off
  *
+ * When a `track` is supplied and the profile carries an explicit bank-statement
+ * notice fee (`track.notice_fee > 0`), that stored value is used as the
+ * authoritative figure — scaled proportionally for a partial payoff. Otherwise
+ * the statutory 0.1% is computed against the principal paid off.
+ *
  * Returns 0 when nothing is being paid off.
  */
 export function computeNoticeFee(
   principalPaid: number,
-  hasAdvanceNotice: boolean
+  hasAdvanceNotice: boolean,
+  track?: Track
 ): number {
   if (principalPaid <= 0) return 0;
-  return hasAdvanceNotice ? 0 : principalPaid * 0.001;
+  if (hasAdvanceNotice) return 0;
+
+  // Fallback to the stored bank-statement notice fee when present.
+  if (track && track.notice_fee > 0) {
+    const balance = liveTrackBalance(track);
+    if (balance > 0 && principalPaid < balance) {
+      // Partial payoff: scale the stored full-discharge fee proportionally.
+      return track.notice_fee * (principalPaid / balance);
+    }
+    return track.notice_fee;
+  }
+
+  return principalPaid * 0.001;
 }
+
 
 // ---------------------------------------------------------------------------
 // §2 Interest Differential Penalty (Amlat Pe'arei Ribit)
@@ -64,6 +94,18 @@ export function interestDifferentialDiscountFactor(yearsElapsed: number): number
 }
 
 /**
+ * The number of years elapsed since an ISO date (used to place a track in the
+ * correct statutory discount bracket). Returns 0 when the date is missing or
+ * invalid, so the full (undiscounted) penalty applies.
+ */
+export function yearsElapsedSince(date?: string): number {
+  if (!date) return 0;
+  const start = new Date(date).getTime();
+  if (Number.isNaN(start)) return 0;
+  return (Date.now() - start) / (365.25 * 24 * 3600 * 1000);
+}
+
+/**
  * The interest differential penalty (Amlat Pe'arei Ribit) for paying off
  * `prepaidPrincipal` on a track.
  *
@@ -75,8 +117,13 @@ export function interestDifferentialDiscountFactor(yearsElapsed: number): number
  *   discount. If the loan rate is at or below the BoI average rate, the
  *   penalty is 0.
  *
- * `yearsElapsed` defaults to 0 (full penalty). `boiAverageRate` defaults to the
- * average BoI base rate over the track's remaining term.
+ * When the profile carries an explicit bank-statement interest-gap penalty
+ * (`track.amlat_pearei_ribit > 0`), that stored value is used as the
+ * authoritative figure — scaled proportionally for a partial payoff.
+ *
+ * `yearsElapsed` defaults to the years elapsed since `track.start_date`.
+ * `boiAverageRate` defaults to the average BoI base rate over the track's
+ * remaining term.
  */
 export function computeInterestDifferentialPenalty(
   track: Track,
@@ -85,6 +132,16 @@ export function computeInterestDifferentialPenalty(
 ): number {
   if (prepaidPrincipal <= 0) return 0;
   if (track.track_type === "PRIME") return 0;
+
+  // Fallback to the stored bank-statement interest-gap penalty when present.
+  if (track.amlat_pearei_ribit > 0) {
+    const balance = liveTrackBalance(track);
+    if (balance > 0 && prepaidPrincipal < balance) {
+      // Partial payoff: scale the stored full-discharge penalty proportionally.
+      return track.amlat_pearei_ribit * (prepaidPrincipal / balance);
+    }
+    return track.amlat_pearei_ribit;
+  }
 
   const remaining = track.remaining_term_months;
   if (remaining <= 0) return 0;
@@ -107,9 +164,12 @@ export function computeInterestDifferentialPenalty(
     remainingMonths: remaining,
   });
 
-  const discount = interestDifferentialDiscountFactor(opts.yearsElapsed ?? 0);
+  const discount = interestDifferentialDiscountFactor(
+    opts.yearsElapsed ?? yearsElapsedSince(track.start_date)
+  );
   return raw * discount;
 }
+
 
 // ---------------------------------------------------------------------------
 // §3 Recalculation Modes
@@ -128,9 +188,12 @@ export interface TrackRecalculation {
   penalty: number;
   /** Notice fee due (₪). */
   noticeFee: number;
-  /** interestSaved − penalty − noticeFee (₪). */
+  /** Statutory operational fee due (₪). */
+  operationalFee: number;
+  /** interestSaved − penalty − noticeFee − operationalFee (₪). */
   netBenefit: number;
 }
+
 
 export interface EarlyPayoffOptions {
   mode?: PayoffReductionMode; // default "reduce_term"
@@ -196,8 +259,9 @@ export function recalculateTrack(
 
   const interestSaved = Math.max(0, interestBefore - interestAfter);
   const penalty = computeInterestDifferentialPenalty(track, L, opts);
-  const noticeFee = computeNoticeFee(L, opts.hasAdvanceNotice ?? false);
-  const netBenefit = interestSaved - penalty - noticeFee;
+  const noticeFee = computeNoticeFee(L, opts.hasAdvanceNotice ?? false, track);
+  const operationalFee = L > 0 ? computeOperationalFee(track) : 0;
+  const netBenefit = interestSaved - penalty - noticeFee - operationalFee;
 
   return {
     newBalance,
@@ -206,9 +270,11 @@ export function recalculateTrack(
     interestSaved,
     penalty,
     noticeFee,
+    operationalFee,
     netBenefit,
   };
 }
+
 
 // ---------------------------------------------------------------------------
 // §4 Optimal Allocation
@@ -321,13 +387,14 @@ export function computePayoffSummary(
   for (const track of tracks) {
     const L = allocations[track.track_id] || 0;
     const r = recalculateTrack(track, L, { mode, hasAdvanceNotice });
-    totalPayoffOutlay += L + r.penalty + r.noticeFee;
+    totalPayoffOutlay += L + r.penalty + r.noticeFee + r.operationalFee;
     guaranteedInterestSaved += r.interestSaved;
     if (mode === "reduce_payment") {
       monthlyCashflowRelief += effectiveMonthlyPayment(track) - r.newMonthlyPayment;
     }
     netBenefit += r.netBenefit;
   }
+
 
   return {
     totalPayoffOutlay,

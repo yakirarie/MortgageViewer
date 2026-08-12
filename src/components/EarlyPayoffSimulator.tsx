@@ -216,8 +216,9 @@ export function EarlyPayoffSimulator({ t, profile }: EarlyPayoffSimulatorProps) 
                   </td>
                   <td className="py-2 px-4 text-right font-mono">{formatCurrency(allocated)}</td>
                   <td className="py-2 px-4 text-right font-mono text-accent-danger">
-                    {formatCurrency(result.penalty + result.noticeFee)}
+                    {formatCurrency(result.penalty + result.noticeFee + result.operationalFee)}
                   </td>
+
                   <td className="py-2 px-4 text-right font-mono">
                     {mode === 'reduce_payment'
                       ? formatCurrency(result.newMonthlyPayment)

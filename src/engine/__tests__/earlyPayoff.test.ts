@@ -2,12 +2,15 @@ import { describe, it, expect } from 'vitest';
 import type { Track } from '../../lib/types';
 import {
   computeNoticeFee,
+  computeOperationalFee,
   interestDifferentialDiscountFactor,
   computeInterestDifferentialPenalty,
+  yearsElapsedSince,
   recalculateTrack,
   getOptimalAllocation,
   computePayoffSummary,
 } from '../earlyPayoff';
+
 
 function makeTrack(overrides: Partial<Track> = {}): Track {
   return {
@@ -45,9 +48,55 @@ describe('computeNoticeFee', () => {
   it('waives the fee when advance notice is given', () => {
     expect(computeNoticeFee(100000, true)).toBe(0);
   });
+
+  it('falls back to the stored bank-statement notice fee when present', () => {
+    const track = makeTrack({ principal_balance: 200000, notice_fee: 300 });
+    // Full payoff → the stored fee is used verbatim.
+    expect(computeNoticeFee(200000, false, track)).toBe(300);
+  });
+
+  it('scales the stored notice fee proportionally for a partial payoff', () => {
+    const track = makeTrack({ principal_balance: 200000, notice_fee: 300 });
+    // Half payoff → half the stored full-discharge fee.
+    expect(computeNoticeFee(100000, false, track)).toBeCloseTo(150, 6);
+  });
+
+  it('still waives the stored notice fee when advance notice is given', () => {
+    const track = makeTrack({ principal_balance: 200000, notice_fee: 300 });
+    expect(computeNoticeFee(200000, true, track)).toBe(0);
+  });
+});
+
+describe('computeOperationalFee', () => {
+  it('defaults to the statutory ₪60 fee', () => {
+    expect(computeOperationalFee(makeTrack())).toBe(60);
+  });
+
+  it('uses the stored operational fee from the profile when present', () => {
+    expect(computeOperationalFee(makeTrack({ operational_fee: 120 }))).toBe(120);
+  });
+
+  it('falls back to ₪60 when the stored value is missing or invalid', () => {
+    expect(computeOperationalFee(makeTrack({ operational_fee: 0 }))).toBe(60);
+    expect(computeOperationalFee(makeTrack({ operational_fee: NaN }))).toBe(60);
+  });
+});
+
+describe('yearsElapsedSince', () => {
+  it('returns 0 for missing or invalid dates', () => {
+    expect(yearsElapsedSince()).toBe(0);
+    expect(yearsElapsedSince('not-a-date')).toBe(0);
+  });
+
+  it('computes the years elapsed since an ISO date', () => {
+    const years = yearsElapsedSince('2020-01-01');
+    expect(years).toBeGreaterThan(5);
+    expect(years).toBeLessThan(7);
+  });
 });
 
 describe('interestDifferentialDiscountFactor', () => {
+
   it('applies the legal time-elapsed discount tiers', () => {
     expect(interestDifferentialDiscountFactor(0)).toBe(1);
     expect(interestDifferentialDiscountFactor(2.9)).toBe(1);
@@ -106,7 +155,37 @@ describe('computeInterestDifferentialPenalty', () => {
     expect(computeInterestDifferentialPenalty(track, 100000, { boiAverageRate: 0.04 })).toBe(0);
   });
 
+  it('falls back to the stored bank-statement interest-gap penalty when present', () => {
+    const track = makeTrack({ principal_balance: 200000, amlat_pearei_ribit: 5000 });
+    // Full payoff → the stored penalty is used verbatim.
+    expect(computeInterestDifferentialPenalty(track, 200000)).toBe(5000);
+  });
+
+  it('scales the stored interest-gap penalty proportionally for a partial payoff', () => {
+    const track = makeTrack({ principal_balance: 200000, amlat_pearei_ribit: 5000 });
+    // Quarter payoff → quarter of the stored full-discharge penalty.
+    expect(computeInterestDifferentialPenalty(track, 50000)).toBeCloseTo(1250, 6);
+  });
+
+  it('applies the time-elapsed discount from the profile start date', () => {
+    // start_date 6+ years ago → 30% discount bracket (0.7 factor).
+    const track = makeTrack({
+      annual_interest_rate: 0.06,
+      remaining_term_months: 120,
+      start_date: '2018-01-01',
+    });
+    const discounted = computeInterestDifferentialPenalty(track, 100000, {
+      boiAverageRate: 0.04,
+    });
+    const full = computeInterestDifferentialPenalty(track, 100000, {
+      boiAverageRate: 0.04,
+      yearsElapsed: 0,
+    });
+    expect(discounted).toBeCloseTo(full * 0.7, 6);
+  });
+
 });
+
 
 describe('recalculateTrack', () => {
   it('clamps allocation to the live balance', () => {
@@ -139,7 +218,7 @@ describe('recalculateTrack', () => {
     expect(result.newRemainingMonths).toBeGreaterThan(0);
   });
 
-  it('netBenefit = interestSaved − penalty − noticeFee', () => {
+  it('netBenefit = interestSaved − penalty − noticeFee − operationalFee', () => {
     const track = makeTrack({
       principal_balance: 200000,
       annual_interest_rate: 0.04,
@@ -151,10 +230,33 @@ describe('recalculateTrack', () => {
       boiAverageRate: 0.03,
     });
     expect(result.netBenefit).toBeCloseTo(
-      result.interestSaved - result.penalty - result.noticeFee,
+      result.interestSaved - result.penalty - result.noticeFee - result.operationalFee,
       6
     );
   });
+
+  it('charges the statutory ₪60 operational fee per active allocation', () => {
+    const track = makeTrack({ principal_balance: 200000, remaining_term_months: 120 });
+    const result = recalculateTrack(track, 50000, { mode: 'reduce_term' });
+    expect(result.operationalFee).toBe(60);
+  });
+
+  it('uses the stored operational fee from the profile when present', () => {
+    const track = makeTrack({
+      principal_balance: 200000,
+      remaining_term_months: 120,
+      operational_fee: 120,
+    });
+    const result = recalculateTrack(track, 50000, { mode: 'reduce_term' });
+    expect(result.operationalFee).toBe(120);
+  });
+
+  it('waives the operational fee when nothing is allocated', () => {
+    const track = makeTrack({ principal_balance: 200000, remaining_term_months: 120 });
+    const result = recalculateTrack(track, 0, { mode: 'reduce_term' });
+    expect(result.operationalFee).toBe(0);
+  });
+
 
 
 });
