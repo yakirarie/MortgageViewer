@@ -6,7 +6,8 @@ import {
   computePayoffSummary,
 } from '../engine/earlyPayoff';
 import { liveTrackBalance } from '../lib/mortgage-math';
-import { formatCurrency, formatNumber } from '../lib/utils';
+import { formatCurrency } from '../lib/utils';
+
 
 
 interface EarlyPayoffSimulatorProps {
@@ -222,8 +223,9 @@ export function EarlyPayoffSimulator({ t, profile }: EarlyPayoffSimulatorProps) 
                   <td className="py-2 px-4 text-right font-mono">
                     {mode === 'reduce_payment'
                       ? formatCurrency(result.newMonthlyPayment)
-                      : `${formatNumber(result.newRemainingMonths)} ${t.common.months}`}
+                      : `${Math.ceil(result.newRemainingMonths)} ${t.common.months}`}
                   </td>
+
                   <td className="py-2 px-4 text-right font-mono text-accent-primary">
                     {formatCurrency(result.interestSaved)}
                   </td>
