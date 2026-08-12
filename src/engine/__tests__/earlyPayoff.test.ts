@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Track } from '../../lib/types';
-import { liveTrackBalance } from '../../lib/mortgage-math';
+import { liveTrackBalance, effectiveMonthlyPayment } from '../../lib/mortgage-math';
+import { populatePrimeRateHistory } from '../../lib/rates-api';
 import {
   computeNoticeFee,
   computeOperationalFee,
@@ -11,6 +12,7 @@ import {
   getOptimalAllocation,
   computePayoffSummary,
 } from '../earlyPayoff';
+
 
 
 
@@ -259,9 +261,62 @@ describe('recalculateTrack', () => {
     expect(result.operationalFee).toBe(0);
   });
 
+  it('uses the effective rate (BoI base + margin) for a Prime track with rate history', () => {
+    // A Prime track whose stored `annual_interest_rate` snapshot (5.5%) lags
+    // its live effective rate (BoI base + margin, ~4.4%). The recomputed
+    // payment must use the effective rate so that reduce_payment produces a
+    // *positive* cashflow relief rather than a spurious negative one.
+    const prime = makeTrack({
+      track_id: 'prime',
+      track_type: 'PRIME',
+      principal_balance: 472771,
+      annual_interest_rate: 0.055, // stale snapshot
+      remaining_term_months: 220,
+      start_date: '2023-01-05',
+      first_payout_date: '2023-02-05',
+      prime_margin: -0.006,
+      original_principal: 500000,
+      original_term_months: 360,
+      rate_history: populatePrimeRateHistory('2023-01-05', -0.006),
+    });
+
+    const originalPayment = effectiveMonthlyPayment(prime);
+    const result = recalculateTrack(prime, 100000, { mode: 'reduce_payment' });
+
+    // The recomputed payment must be lower than the original → positive relief.
+    expect(result.newMonthlyPayment).toBeLessThan(originalPayment);
+    expect(originalPayment - result.newMonthlyPayment).toBeGreaterThan(0);
+  });
+
+  it('returns the baseline unchanged when nothing is allocated', () => {
+    // A track with no allocation must contribute zero relief / interest saved,
+    // even when its effective payment differs from a fresh Spitzer recompute on
+    // the live balance (the case that previously fabricated spurious relief).
+    const prime = makeTrack({
+      track_id: 'prime',
+      track_type: 'PRIME',
+      principal_balance: 472771,
+      annual_interest_rate: 0.055,
+      remaining_term_months: 220,
+      start_date: '2023-01-05',
+      first_payout_date: '2023-02-05',
+      prime_margin: -0.006,
+      original_principal: 500000,
+      original_term_months: 360,
+      rate_history: populatePrimeRateHistory('2023-01-05', -0.006),
+    });
+
+    const result = recalculateTrack(prime, 0, { mode: 'reduce_payment' });
+    expect(result.interestSaved).toBe(0);
+    expect(result.netBenefit).toBe(0);
+    expect(result.newMonthlyPayment).toBeCloseTo(effectiveMonthlyPayment(prime), 6);
+    expect(result.newRemainingMonths).toBe(prime.remaining_term_months);
+  });
+
 
 
 });
+
 
 describe('getOptimalAllocation', () => {
   it('allocates up to the lump sum across tracks', () => {
@@ -432,7 +487,60 @@ describe('getOptimalAllocation', () => {
     expect(summary.netBenefit).toBeGreaterThanOrEqual(80000);
     expect(summary.monthlyCashflowRelief).toBeGreaterThanOrEqual(550);
   });
+
+  it('reduce_payment shifts away from a no-penalty Prime track toward high-relief tracks', () => {
+    // A Prime track has no interest-gap penalty, so a pure net-benefit
+    // maximizer would dump the whole lump sum into it — but Prime yields
+    // negligible monthly cashflow relief. In reduce_payment mode the optimizer
+    // must instead favor the tracks that actually lower the monthly payment.
+    const prime = makeTrack({
+      track_id: 'prime',
+      custom_name: 'Prime',
+      track_type: 'PRIME',
+      principal_balance: 472771,
+      annual_interest_rate: 0.055,
+      remaining_term_months: 220,
+      start_date: '2023-01-05',
+      first_payout_date: '2023-02-05',
+      prime_margin: -0.006,
+      original_principal: 500000,
+      original_term_months: 360,
+      rate_history: populatePrimeRateHistory('2023-01-05', -0.006),
+    });
+    const fixed = makeTrack({
+      track_id: 'fixed',
+      custom_name: 'Fixed Unlinked',
+      track_type: 'FIXED_UNLINKED',
+      principal_balance: 500000,
+      annual_interest_rate: 0.045,
+      remaining_term_months: 240,
+    });
+    const variable = makeTrack({
+      track_id: 'variable',
+      custom_name: 'Variable 5Y',
+      track_type: 'VARIABLE_5Y',
+      principal_balance: 500000,
+      annual_interest_rate: 0.05,
+      remaining_term_months: 240,
+      months_to_reset: 12,
+    });
+
+    const tracks = [prime, fixed, variable];
+    const optimal = getOptimalAllocation(tracks, 100000, 'reduce_payment', false);
+    const allocations: Record<string, number> = {};
+    optimal.forEach((r) => {
+      allocations[r.track_id] = r.allocated;
+    });
+    const summary = computePayoffSummary(tracks, allocations, 'reduce_payment', false);
+
+    // The allocation must not be dumped entirely into Prime (which gives
+    // negligible relief) — it should produce meaningful monthly cashflow relief.
+    expect(summary.monthlyCashflowRelief).toBeGreaterThanOrEqual(550);
+    // And the Prime track must not receive the entire lump sum.
+    expect(allocations['prime'] ?? 0).toBeLessThan(100000);
+  });
 });
+
 
 
 

@@ -16,11 +16,13 @@ import {
   spitzerMonthlyPayment,
   monthsToPayoff,
   effectiveMonthlyPayment,
+  currentEffectiveRate,
   totalRemainingInterest,
   liveTrackBalance,
   remainingInterestForTrack,
   fixedTrackGapPenalty,
 } from "../lib/mortgage-math";
+
 import { getBoiAverageRate } from "../lib/rates-api";
 
 export type { PayoffReductionMode };
@@ -221,9 +223,36 @@ export function recalculateTrack(
   const mode = opts.mode ?? "reduce_term";
   const L = Math.max(0, Math.min(allocation, liveTrackBalance(track)));
 
+  // Use the effective rate (BoI base + margin for Prime tracks, or the latest
+  // rate-history entry) rather than the stored `annual_interest_rate` snapshot.
+  // This keeps the recomputed payment/term consistent with
+  // `effectiveMonthlyPayment`, which derives the current payment from the live
+  // amortization timeline. Without this, a Prime track whose stored rate lags
+  // its effective rate would report a *negative* cashflow relief in
+  // reduce_payment mode (the recomputed payment would exceed the original).
+  const effectiveRate = currentEffectiveRate(track);
+
   const originalPayment = effectiveMonthlyPayment(track);
   const interestBefore = remainingInterestForTrack(track);
   const newBalance = liveTrackBalance(track) - L;
+
+  // No allocation → nothing changes. Returning the baseline early avoids
+  // recomputing the payment/term via Spitzer on the live balance, which would
+  // otherwise diverge from `effectiveMonthlyPayment` (history-derived for Prime
+  // tracks) and fabricate spurious cashflow relief / interest saved for tracks
+  // that received no lump sum.
+  if (L <= 0) {
+    return {
+      newBalance: liveTrackBalance(track),
+      newMonthlyPayment: originalPayment,
+      newRemainingMonths: track.remaining_term_months,
+      interestSaved: 0,
+      penalty: 0,
+      noticeFee: 0,
+      operationalFee: 0,
+      netBenefit: 0,
+    };
+  }
 
   let interestAfter: number;
   let newMonthlyPayment = originalPayment;
@@ -232,7 +261,7 @@ export function recalculateTrack(
   if (mode === "reduce_payment") {
     newMonthlyPayment = spitzerMonthlyPayment(
       newBalance,
-      track.annual_interest_rate,
+      effectiveRate,
       track.remaining_term_months
     );
     interestAfter = totalRemainingInterest(
@@ -244,7 +273,7 @@ export function recalculateTrack(
     // reduce_term: keep the original payment, solve for the new (shorter) term.
     const newTerm = monthsToPayoff(
       newBalance,
-      track.annual_interest_rate,
+      effectiveRate,
       originalPayment
     );
     newRemainingMonths = Number.isFinite(newTerm)
@@ -256,6 +285,7 @@ export function recalculateTrack(
       newRemainingMonths
     );
   }
+
 
   const interestSaved = Math.max(0, interestBefore - interestAfter);
   const penalty = computeInterestDifferentialPenalty(track, L, opts);
@@ -274,6 +304,7 @@ export function recalculateTrack(
     netBenefit,
   };
 }
+
 
 
 // ---------------------------------------------------------------------------
@@ -308,21 +339,30 @@ const OPTIMIZER_STEP = 1000;
 /**
  * Suggest an optimal allocation of `lumpSum` across tracks.
  *
- * Objective: maximize Net Benefit = Σ(interest saved) − Σ(penalties).
+ * Objective (mode-aware):
+ *   - reduce_term (Kitzur Tekufa): maximize Net Benefit =
+ *     Σ(interest saved) − Σ(penalties).
+ *   - reduce_payment (Kitzur Tlash): maximize monthly cashflow relief, with
+ *     Net Benefit as a secondary tie-breaker. This keeps the allocation on the
+ *     tracks that actually lower the monthly payment rather than dumping the
+ *     whole lump sum into a single no-penalty track that yields negligible
+ *     relief.
+ *
  * Constraints: Σ A_i ≤ lumpSum, 0 ≤ A_i ≤ B_i.
  *
  * Strategy: a discrete step-wise marginal optimization. Starting from all-zero
  * allocations, the lump sum is divided into ₪1,000 increments. At each step the
- * track whose next increment yields the largest positive marginal net-benefit
- * gain (ΔNB = NetBenefit(A_i + step) − NetBenefit(A_i)) receives the increment.
- * The loop stops when no track can improve net benefit or the lump sum is
- * exhausted. Any remainder smaller than one step is granted to the track with
- * the highest marginal benefit at its current allocation.
+ * track whose next increment yields the largest positive marginal gain on the
+ * primary objective receives the increment (ties broken by the secondary
+ * objective). The loop stops when no track can improve the primary objective
+ * or the lump sum is exhausted. Any remainder smaller than one step is granted
+ * to the track with the highest marginal primary gain at its current allocation.
  *
  * Because the operational fee (₪60) triggers on the first non-zero increment of
  * a track, the marginal gain of that first increment already accounts for it,
  * so the optimizer naturally avoids paying the fee unless it is worthwhile.
  */
+
 export function getOptimalAllocation(
   tracks: Track[],
   lumpSum: number,
@@ -340,77 +380,84 @@ export function getOptimalAllocation(
 
   // Monthly cashflow relief of a single track at a given allocation. Only
   // meaningful in reduce_payment mode (the payment is unchanged in
-  // reduce_term), where it is used as a tie-breaker between equal net-benefit
-  // gains.
+  // reduce_term).
   const cashflowReliefAt = (index: number, amount: number): number => {
     const r = recalculateTrack(tracks[index], amount, { mode, hasAdvanceNotice });
     return effectiveMonthlyPayment(tracks[index]) - r.newMonthlyPayment;
   };
 
-  // Marginal gain of adding one step to a track (0 if it would exceed balance).
-  const marginalGain = (index: number): number => {
+  // The primary objective differs by mode:
+  //   - reduce_term (Kitzur Tekufa): maximize net benefit (interest saved −
+  //     penalties). The payment is unchanged, so there is no cashflow relief.
+  //   - reduce_payment (Kitzur Tlash): maximize monthly cashflow relief — the
+  //     whole point of this mode is to lower the monthly payment. Net benefit
+  //     is used as a secondary tie-breaker between equal relief gains.
+  const primaryAt =
+    mode === "reduce_payment" ? cashflowReliefAt : netBenefitAt;
+  const secondaryAt =
+    mode === "reduce_payment" ? netBenefitAt : cashflowReliefAt;
+
+  // Marginal primary-objective gain of adding one step to a track (0 if it
+  // would exceed balance).
+  const marginalPrimary = (index: number): number => {
     const current = allocations[index];
     if (current + step > balances[index] + 1e-9) return 0;
-    return netBenefitAt(index, current + step) - netBenefitAt(index, current);
+    return primaryAt(index, current + step) - primaryAt(index, current);
   };
 
-  // Marginal monthly cashflow relief of adding one step to a track.
-  const marginalRelief = (index: number): number => {
+  // Marginal secondary-objective gain of adding one step to a track.
+  const marginalSecondary = (index: number): number => {
     const current = allocations[index];
     if (current + step > balances[index] + 1e-9) return 0;
-    return cashflowReliefAt(index, current + step) - cashflowReliefAt(index, current);
+    return secondaryAt(index, current + step) - secondaryAt(index, current);
   };
 
-  // Step-wise marginal optimization. The primary objective is maximizing net
-  // benefit; in reduce_payment mode, when two tracks offer an equal marginal
-  // net-benefit gain, the one with the larger marginal monthly cashflow relief
-  // wins (a secondary tie-breaker).
+  // Step-wise marginal optimization. The primary objective is selected by mode
+  // above; when two tracks offer an equal marginal primary gain, the one with
+  // the larger marginal secondary gain wins (a tie-breaker).
   while (remaining >= step) {
     let bestIndex = -1;
-    let bestGain = 0;
-    let bestRelief = 0;
+    let bestPrimary = 0;
+    let bestSecondary = 0;
     for (let i = 0; i < tracks.length; i++) {
-      const gain = marginalGain(i);
-      if (gain <= 0) continue;
-      const relief = mode === "reduce_payment" ? marginalRelief(i) : 0;
+      const primary = marginalPrimary(i);
+      if (primary <= 0) continue;
+      const secondary = marginalSecondary(i);
       if (
-        gain > bestGain + 1e-9 ||
-        (Math.abs(gain - bestGain) <= 1e-9 && relief > bestRelief)
+        primary > bestPrimary + 1e-9 ||
+        (Math.abs(primary - bestPrimary) <= 1e-9 && secondary > bestSecondary)
       ) {
-        bestGain = gain;
-        bestRelief = relief;
+        bestPrimary = primary;
+        bestSecondary = secondary;
         bestIndex = i;
       }
     }
-    // No track can improve net benefit → stop.
+    // No track can improve the primary objective → stop.
     if (bestIndex < 0) break;
     allocations[bestIndex] += step;
     remaining -= step;
   }
 
   // Grant any remainder (< one step) to the track with the highest marginal
-  // benefit at its current allocation, if it improves net benefit. The same
-  // cashflow-relief tie-breaker applies in reduce_payment mode.
+  // primary gain at its current allocation, if it improves the primary
+  // objective. The same secondary tie-breaker applies.
   if (remaining > 0) {
     let bestIndex = -1;
-    let bestGain = 0;
-    let bestRelief = 0;
+    let bestPrimary = 0;
+    let bestSecondary = 0;
     for (let i = 0; i < tracks.length; i++) {
       const current = allocations[i];
       const amount = Math.min(current + remaining, balances[i]);
       if (amount <= current) continue;
-      const gain = netBenefitAt(i, amount) - netBenefitAt(i, current);
-      if (gain <= 0) continue;
-      const relief =
-        mode === "reduce_payment"
-          ? cashflowReliefAt(i, amount) - cashflowReliefAt(i, current)
-          : 0;
+      const primary = primaryAt(i, amount) - primaryAt(i, current);
+      if (primary <= 0) continue;
+      const secondary = secondaryAt(i, amount) - secondaryAt(i, current);
       if (
-        gain > bestGain + 1e-9 ||
-        (Math.abs(gain - bestGain) <= 1e-9 && relief > bestRelief)
+        primary > bestPrimary + 1e-9 ||
+        (Math.abs(primary - bestPrimary) <= 1e-9 && secondary > bestSecondary)
       ) {
-        bestGain = gain;
-        bestRelief = relief;
+        bestPrimary = primary;
+        bestSecondary = secondary;
         bestIndex = i;
       }
     }
@@ -421,6 +468,7 @@ export function getOptimalAllocation(
       );
     }
   }
+
 
 
   // Build the result list, preserving the input track order.
