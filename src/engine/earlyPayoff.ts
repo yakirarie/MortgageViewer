@@ -338,6 +338,15 @@ export function getOptimalAllocation(
   const netBenefitAt = (index: number, amount: number): number =>
     recalculateTrack(tracks[index], amount, { mode, hasAdvanceNotice }).netBenefit;
 
+  // Monthly cashflow relief of a single track at a given allocation. Only
+  // meaningful in reduce_payment mode (the payment is unchanged in
+  // reduce_term), where it is used as a tie-breaker between equal net-benefit
+  // gains.
+  const cashflowReliefAt = (index: number, amount: number): number => {
+    const r = recalculateTrack(tracks[index], amount, { mode, hasAdvanceNotice });
+    return effectiveMonthlyPayment(tracks[index]) - r.newMonthlyPayment;
+  };
+
   // Marginal gain of adding one step to a track (0 if it would exceed balance).
   const marginalGain = (index: number): number => {
     const current = allocations[index];
@@ -345,14 +354,31 @@ export function getOptimalAllocation(
     return netBenefitAt(index, current + step) - netBenefitAt(index, current);
   };
 
-  // Step-wise marginal optimization.
+  // Marginal monthly cashflow relief of adding one step to a track.
+  const marginalRelief = (index: number): number => {
+    const current = allocations[index];
+    if (current + step > balances[index] + 1e-9) return 0;
+    return cashflowReliefAt(index, current + step) - cashflowReliefAt(index, current);
+  };
+
+  // Step-wise marginal optimization. The primary objective is maximizing net
+  // benefit; in reduce_payment mode, when two tracks offer an equal marginal
+  // net-benefit gain, the one with the larger marginal monthly cashflow relief
+  // wins (a secondary tie-breaker).
   while (remaining >= step) {
     let bestIndex = -1;
     let bestGain = 0;
+    let bestRelief = 0;
     for (let i = 0; i < tracks.length; i++) {
       const gain = marginalGain(i);
-      if (gain > bestGain) {
+      if (gain <= 0) continue;
+      const relief = mode === "reduce_payment" ? marginalRelief(i) : 0;
+      if (
+        gain > bestGain + 1e-9 ||
+        (Math.abs(gain - bestGain) <= 1e-9 && relief > bestRelief)
+      ) {
         bestGain = gain;
+        bestRelief = relief;
         bestIndex = i;
       }
     }
@@ -363,17 +389,28 @@ export function getOptimalAllocation(
   }
 
   // Grant any remainder (< one step) to the track with the highest marginal
-  // benefit at its current allocation, if it improves net benefit.
+  // benefit at its current allocation, if it improves net benefit. The same
+  // cashflow-relief tie-breaker applies in reduce_payment mode.
   if (remaining > 0) {
     let bestIndex = -1;
     let bestGain = 0;
+    let bestRelief = 0;
     for (let i = 0; i < tracks.length; i++) {
       const current = allocations[i];
       const amount = Math.min(current + remaining, balances[i]);
       if (amount <= current) continue;
       const gain = netBenefitAt(i, amount) - netBenefitAt(i, current);
-      if (gain > bestGain) {
+      if (gain <= 0) continue;
+      const relief =
+        mode === "reduce_payment"
+          ? cashflowReliefAt(i, amount) - cashflowReliefAt(i, current)
+          : 0;
+      if (
+        gain > bestGain + 1e-9 ||
+        (Math.abs(gain - bestGain) <= 1e-9 && relief > bestRelief)
+      ) {
         bestGain = gain;
+        bestRelief = relief;
         bestIndex = i;
       }
     }
@@ -384,6 +421,7 @@ export function getOptimalAllocation(
       );
     }
   }
+
 
   // Build the result list, preserving the input track order.
   const results: AllocationResult[] = [];

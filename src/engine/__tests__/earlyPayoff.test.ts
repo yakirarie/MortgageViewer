@@ -353,7 +353,87 @@ describe('getOptimalAllocation', () => {
     // Sanity: the optimal net benefit exceeds the reference figure of ₪219,766.
     expect(optimalNetBenefit).toBeGreaterThan(219766);
   });
+
+  it('is mode-aware: reduce_term maximizes net benefit', () => {
+    // A heterogeneous portfolio where the optimizer concentrates the lump sum
+    // on the high-rate tracks. In reduce_term mode the objective is purely
+    // net benefit (interest saved − penalties).
+    const tracks = [
+      makeTrack({
+        track_id: 'a',
+        track_type: 'FIXED_UNLINKED',
+        principal_balance: 500000,
+        annual_interest_rate: 0.06,
+        remaining_term_months: 360,
+      }),
+      makeTrack({
+        track_id: 'b',
+        track_type: 'FIXED_UNLINKED',
+        principal_balance: 500000,
+        annual_interest_rate: 0.06,
+        remaining_term_months: 360,
+      }),
+      makeTrack({
+        track_id: 'c',
+        track_type: 'FIXED_UNLINKED',
+        principal_balance: 500000,
+        annual_interest_rate: 0.03,
+        remaining_term_months: 360,
+      }),
+    ];
+
+    const optimal = getOptimalAllocation(tracks, 100000, 'reduce_term', false);
+    const allocations: Record<string, number> = {};
+    optimal.forEach((r) => {
+      allocations[r.track_id] = r.allocated;
+    });
+    const summary = computePayoffSummary(tracks, allocations, 'reduce_term', false);
+
+    // reduce_term keeps the payment constant, so there is no cashflow relief.
+    expect(summary.monthlyCashflowRelief).toBe(0);
+    // Net benefit must clear the ₪237,000 threshold.
+    expect(summary.netBenefit).toBeGreaterThanOrEqual(237000);
+  });
+
+  it('is mode-aware: reduce_payment maximizes net benefit and cashflow relief', () => {
+    const tracks = [
+      makeTrack({
+        track_id: 'a',
+        track_type: 'FIXED_UNLINKED',
+        principal_balance: 500000,
+        annual_interest_rate: 0.06,
+        remaining_term_months: 360,
+      }),
+      makeTrack({
+        track_id: 'b',
+        track_type: 'FIXED_UNLINKED',
+        principal_balance: 500000,
+        annual_interest_rate: 0.06,
+        remaining_term_months: 360,
+      }),
+      makeTrack({
+        track_id: 'c',
+        track_type: 'FIXED_UNLINKED',
+        principal_balance: 500000,
+        annual_interest_rate: 0.03,
+        remaining_term_months: 360,
+      }),
+    ];
+
+    const optimal = getOptimalAllocation(tracks, 100000, 'reduce_payment', false);
+    const allocations: Record<string, number> = {};
+    optimal.forEach((r) => {
+      allocations[r.track_id] = r.allocated;
+    });
+    const summary = computePayoffSummary(tracks, allocations, 'reduce_payment', false);
+
+    // reduce_payment keeps the term constant and lowers the monthly payment,
+    // so both net benefit and monthly cashflow relief are produced.
+    expect(summary.netBenefit).toBeGreaterThanOrEqual(80000);
+    expect(summary.monthlyCashflowRelief).toBeGreaterThanOrEqual(550);
+  });
 });
+
 
 
 describe('computePayoffSummary', () => {
