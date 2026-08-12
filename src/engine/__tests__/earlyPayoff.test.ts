@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Track } from '../../lib/types';
+import { liveTrackBalance } from '../../lib/mortgage-math';
 import {
   computeNoticeFee,
   computeOperationalFee,
@@ -10,6 +11,7 @@ import {
   getOptimalAllocation,
   computePayoffSummary,
 } from '../earlyPayoff';
+
 
 
 function makeTrack(overrides: Partial<Track> = {}): Track {
@@ -276,9 +278,83 @@ describe('getOptimalAllocation', () => {
   it('never allocates more than a track balance', () => {
     const tracks = [makeTrack({ track_id: 'a', principal_balance: 50000 })];
     const results = getOptimalAllocation(tracks, 1000000, 'reduce_term', false);
-    expect(results[0].allocated).toBe(50000);
+    // The optimizer stops at the marginal optimum: it never exceeds the
+    // balance, and it stops allocating once an extra increment would reduce
+    // net benefit (interest-gap penalty + notice fee outweigh interest saved).
+    expect(results[0].allocated).toBeGreaterThan(0);
+    expect(results[0].allocated).toBeLessThanOrEqual(50000);
+  });
+
+
+  it('beats an equal split on total net benefit', () => {
+    // A heterogeneous portfolio where the optimizer should concentrate the
+    // lump sum on the highest-marginal-benefit tracks rather than spreading it
+    // evenly. Two high-rate tracks dominate the low-rate track, so the optimal
+    // allocation pours the full lump sum into the high-rate pair.
+    const tracks = [
+      makeTrack({
+        track_id: 'a',
+        custom_name: 'High-rate fixed 1',
+        track_type: 'FIXED_UNLINKED',
+        principal_balance: 500000,
+        annual_interest_rate: 0.06,
+        remaining_term_months: 360,
+      }),
+      makeTrack({
+        track_id: 'b',
+        custom_name: 'High-rate fixed 2',
+        track_type: 'FIXED_UNLINKED',
+        principal_balance: 500000,
+        annual_interest_rate: 0.06,
+        remaining_term_months: 360,
+      }),
+      makeTrack({
+        track_id: 'c',
+        custom_name: 'Low-rate fixed',
+        track_type: 'FIXED_UNLINKED',
+        principal_balance: 500000,
+        annual_interest_rate: 0.03,
+        remaining_term_months: 360,
+      }),
+    ];
+
+
+    const lumpSum = 100000;
+    const mode = 'reduce_term' as const;
+
+    // Equal split: distribute the lump sum evenly across all three tracks.
+    const equalShare = lumpSum / tracks.length;
+    const equalAllocations: Record<string, number> = {};
+    tracks.forEach((t) => {
+      equalAllocations[t.track_id] = Math.min(equalShare, liveTrackBalance(t));
+    });
+    const equalNetBenefit = computePayoffSummary(
+      tracks,
+      equalAllocations,
+      mode,
+      false
+    ).netBenefit;
+
+    // Optimal allocation from the step-wise marginal optimizer.
+    const optimal = getOptimalAllocation(tracks, lumpSum, mode, false);
+    const optimalAllocations: Record<string, number> = {};
+    optimal.forEach((r) => {
+      optimalAllocations[r.track_id] = r.allocated;
+    });
+    const optimalNetBenefit = computePayoffSummary(
+      tracks,
+      optimalAllocations,
+      mode,
+      false
+    ).netBenefit;
+
+    // The optimizer must strictly beat the equal split.
+    expect(optimalNetBenefit).toBeGreaterThan(equalNetBenefit);
+    // Sanity: the optimal net benefit exceeds the reference figure of ₪219,766.
+    expect(optimalNetBenefit).toBeGreaterThan(219766);
   });
 });
+
 
 describe('computePayoffSummary', () => {
   it('aggregates outlay, interest saved, and net benefit', () => {

@@ -299,16 +299,29 @@ export interface AllocationResult {
 }
 
 /**
+ * The discrete increment used by the step-wise marginal optimizer. A smaller
+ * step yields a closer approximation to the continuous optimum at the cost of
+ * more iterations. ₪1,000 balances accuracy against runtime.
+ */
+const OPTIMIZER_STEP = 1000;
+
+/**
  * Suggest an optimal allocation of `lumpSum` across tracks.
  *
  * Objective: maximize Net Benefit = Σ(interest saved) − Σ(penalties).
  * Constraints: Σ A_i ≤ lumpSum, 0 ≤ A_i ≤ B_i.
  *
- * Strategy: a bounded greedy search that ranks tracks by net-benefit-per-shekel
- * efficiency (computed at a full-payoff trial amount), then fills each track's
- * min(balance, remaining lump sum) in that order until the lump sum is
- * exhausted. This is a heuristic, not a guaranteed-optimal allocation — the UI
- * labels it as such.
+ * Strategy: a discrete step-wise marginal optimization. Starting from all-zero
+ * allocations, the lump sum is divided into ₪1,000 increments. At each step the
+ * track whose next increment yields the largest positive marginal net-benefit
+ * gain (ΔNB = NetBenefit(A_i + step) − NetBenefit(A_i)) receives the increment.
+ * The loop stops when no track can improve net benefit or the lump sum is
+ * exhausted. Any remainder smaller than one step is granted to the track with
+ * the highest marginal benefit at its current allocation.
+ *
+ * Because the operational fee (₪60) triggers on the first non-zero increment of
+ * a track, the marginal gain of that first increment already accounts for it,
+ * so the optimizer naturally avoids paying the fee unless it is worthwhile.
  */
 export function getOptimalAllocation(
   tracks: Track[],
@@ -316,43 +329,83 @@ export function getOptimalAllocation(
   mode: PayoffReductionMode = "reduce_term",
   hasAdvanceNotice = false
 ): AllocationResult[] {
-  const ranked = tracks
-    .map((track) => {
-      const balance = liveTrackBalance(track);
-      const trial = recalculateTrack(track, balance, {
-        mode,
-        hasAdvanceNotice,
-      });
-      const efficiency = balance > 0 ? trial.netBenefit / balance : -Infinity;
-      return { track, efficiency };
-    })
-    .sort((a, b) => b.efficiency - a.efficiency);
-
+  const step = OPTIMIZER_STEP;
+  const balances = tracks.map((track) => liveTrackBalance(track));
+  const allocations = tracks.map(() => 0);
   let remaining = Math.max(0, lumpSum);
-  const results: AllocationResult[] = [];
 
-  for (const { track } of ranked) {
-    if (remaining <= 0) break;
-    const balance = liveTrackBalance(track);
-    const allocated = Math.min(balance, remaining);
-    if (allocated > 0) {
-      const r = recalculateTrack(track, allocated, { mode, hasAdvanceNotice });
-      results.push({
-        track_id: track.track_id,
-        allocated,
-        penalty: r.penalty,
-        noticeFee: r.noticeFee,
-        interestSaved: r.interestSaved,
-        netBenefit: r.netBenefit,
-        newMonthlyPayment: r.newMonthlyPayment,
-        newRemainingMonths: r.newRemainingMonths,
-      });
-      remaining -= allocated;
+  // Net benefit of a single track at a given allocation.
+  const netBenefitAt = (index: number, amount: number): number =>
+    recalculateTrack(tracks[index], amount, { mode, hasAdvanceNotice }).netBenefit;
+
+  // Marginal gain of adding one step to a track (0 if it would exceed balance).
+  const marginalGain = (index: number): number => {
+    const current = allocations[index];
+    if (current + step > balances[index] + 1e-9) return 0;
+    return netBenefitAt(index, current + step) - netBenefitAt(index, current);
+  };
+
+  // Step-wise marginal optimization.
+  while (remaining >= step) {
+    let bestIndex = -1;
+    let bestGain = 0;
+    for (let i = 0; i < tracks.length; i++) {
+      const gain = marginalGain(i);
+      if (gain > bestGain) {
+        bestGain = gain;
+        bestIndex = i;
+      }
     }
+    // No track can improve net benefit → stop.
+    if (bestIndex < 0) break;
+    allocations[bestIndex] += step;
+    remaining -= step;
+  }
+
+  // Grant any remainder (< one step) to the track with the highest marginal
+  // benefit at its current allocation, if it improves net benefit.
+  if (remaining > 0) {
+    let bestIndex = -1;
+    let bestGain = 0;
+    for (let i = 0; i < tracks.length; i++) {
+      const current = allocations[i];
+      const amount = Math.min(current + remaining, balances[i]);
+      if (amount <= current) continue;
+      const gain = netBenefitAt(i, amount) - netBenefitAt(i, current);
+      if (gain > bestGain) {
+        bestGain = gain;
+        bestIndex = i;
+      }
+    }
+    if (bestIndex >= 0) {
+      allocations[bestIndex] = Math.min(
+        allocations[bestIndex] + remaining,
+        balances[bestIndex]
+      );
+    }
+  }
+
+  // Build the result list, preserving the input track order.
+  const results: AllocationResult[] = [];
+  for (let i = 0; i < tracks.length; i++) {
+    const allocated = allocations[i];
+    if (allocated <= 0) continue;
+    const r = recalculateTrack(tracks[i], allocated, { mode, hasAdvanceNotice });
+    results.push({
+      track_id: tracks[i].track_id,
+      allocated,
+      penalty: r.penalty,
+      noticeFee: r.noticeFee,
+      interestSaved: r.interestSaved,
+      netBenefit: r.netBenefit,
+      newMonthlyPayment: r.newMonthlyPayment,
+      newRemainingMonths: r.newRemainingMonths,
+    });
   }
 
   return results;
 }
+
 
 // ---------------------------------------------------------------------------
 // §5 Payoff Diagnostics Summary
