@@ -91,7 +91,12 @@ interface Translations {
     disclaimer: string;
     disclaimerText: string;
     noticeWaivedNote: string;
+    applyToProfile: string;
+    applyToProfileHint: string;
+    applyToProfileTooltip: string;
+    applyToProfileDisabledTooltip: string;
   };
+
 
 
   refinance: {
@@ -272,7 +277,12 @@ const translations: Record<Language, Translations> = {
 
       disclaimerText: 'Mortgage payoff is a guaranteed, risk-free return. Market investment returns are not guaranteed. This comparison does not account for capital gains tax, or your personal risk tolerance.',
       noticeWaivedNote: 'Notice fee waived — 10-day advance notice rule (Amlat Hoda\'a Mukdamet) applied.',
+      applyToProfile: 'Apply to Active Profile',
+      applyToProfileHint: 'Commit the current allocation to your active mortgage profile. This permanently updates your track balances and payment/term structure.',
+      applyToProfileTooltip: 'Apply the current allocation to your active mortgage profile',
+      applyToProfileDisabledTooltip: 'Allocate an amount first to enable applying the payoff',
     },
+
     refinance: {
       title: 'Refinancing Breakeven Engine',
       selectTracks: 'Select Tracks to Refinance',
@@ -449,7 +459,12 @@ const translations: Record<Language, Translations> = {
 
       disclaimerText: 'פרעון משכנתא הוא תשואה מובטחת ללא סיכון. תשואות השקעה בשוק אינן מובטחות. השוואה זו אינה לוקחת בחשבון מס הכנסות הון, את סיבולת הסיכון האישית שלך.',
       noticeWaivedNote: 'עמלת הודעה מבוטלת — חוק הודעה מוקדמת (עמלת הודעה מוקדמת) הוחל.',
+      applyToProfile: 'החל על הפרופיל הפעיל',
+      applyToProfileHint: 'התחייב להקצאה הנוכחית בפרופיל המשכנתא הפעיל שלך. פעולה זו מעדכנת לצמיתות את יתרות המסלולים ואת מבנה התשלום/התקופה.',
+      applyToProfileTooltip: 'החל את ההקצאה הנוכחית על פרופיל המשכנתא הפעיל שלך',
+      applyToProfileDisabledTooltip: 'הקצה סכום תחילה כדי לאפשר החלת הפרעון',
     },
+
     refinance: {
       title: 'מנוע איזון מיחזור משכנתא',
       selectTracks: 'בחר מסלולים למיחזור',

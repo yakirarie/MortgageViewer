@@ -5,6 +5,7 @@ import {
   getOptimalAllocation,
   computePayoffSummary,
 } from '../engine/earlyPayoff';
+import { applyEarlyPayoffToProfile } from '../engine/applyEarlyPayoff';
 import { liveTrackBalance } from '../lib/mortgage-math';
 import { formatCurrency } from '../lib/utils';
 
@@ -13,9 +14,11 @@ import { formatCurrency } from '../lib/utils';
 interface EarlyPayoffSimulatorProps {
   t: any;
   profile: Profile;
+  onUpdateProfile: (profile: Profile) => void;
 }
 
-export function EarlyPayoffSimulator({ t, profile }: EarlyPayoffSimulatorProps) {
+export function EarlyPayoffSimulator({ t, profile, onUpdateProfile }: EarlyPayoffSimulatorProps) {
+
   const [lumpSum, setLumpSum] = useState<number>(100000);
   const [mode, setMode] = useState<PayoffReductionMode>('reduce_term');
   const [hasAdvanceNotice, setHasAdvanceNotice] = useState(false);
@@ -79,6 +82,48 @@ export function EarlyPayoffSimulator({ t, profile }: EarlyPayoffSimulatorProps) 
     () => computePayoffSummary(profile.tracks, allocations, mode, hasAdvanceNotice),
     [profile.tracks, allocations, mode, hasAdvanceNotice]
   );
+
+  // Commit the current allocation to the active profile after confirmation.
+  const handleApplyPayoff = () => {
+    if (totalAllocated === 0) return;
+
+    const confirmText =
+      `Are you sure you want to apply a ₪${totalAllocated.toLocaleString()} early payoff to your active mortgage profile?\n\n` +
+      `This will permanently update your track balances and ${
+        mode === 'reduce_payment' ? 'monthly payments' : 'remaining terms'
+      }.`;
+
+    if (window.confirm(confirmText)) {
+      const executionResults = trackResults
+        .filter(({ allocated }) => allocated > 0)
+        .map(({ track, allocated, result }) => ({
+          trackId: track.track_id,
+          allocatedAmount: allocated,
+          newBalance: result.newBalance,
+          newMonthlyPayment: result.newMonthlyPayment,
+          newTermMonths: result.newRemainingMonths,
+        }));
+
+
+      const updatedProfile = applyEarlyPayoffToProfile(
+        profile,
+        allocations,
+        mode,
+        executionResults
+      );
+
+      onUpdateProfile(updatedProfile);
+
+      // Reset simulator inputs to a fresh equal-share allocation.
+      const equalShare = lumpSum / updatedProfile.tracks.length;
+      const next: Record<string, number> = {};
+      updatedProfile.tracks.forEach((track) => {
+        next[track.track_id] = Math.min(equalShare, liveTrackBalance(track));
+      });
+      setAllocations(next);
+    }
+  };
+
 
   return (
     <div className="p-6 space-y-6">
@@ -237,9 +282,25 @@ export function EarlyPayoffSimulator({ t, profile }: EarlyPayoffSimulatorProps) 
             </tbody>
           </table>
         </div>
+
+        {/* Apply to Active Profile */}
+        <div className="mt-4 pt-4 border-t border-border-subtle flex items-center justify-between gap-4">
+          <p className="text-sm text-text-secondary">
+            {t.payoff.applyToProfileHint}
+          </p>
+          <button
+            onClick={handleApplyPayoff}
+            disabled={totalAllocated === 0}
+            className="px-4 py-2 bg-accent-primary text-bg-primary rounded text-sm font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+            title={totalAllocated === 0 ? t.payoff.applyToProfileDisabledTooltip : t.payoff.applyToProfileTooltip}
+          >
+            {t.payoff.applyToProfile}
+          </button>
+        </div>
       </div>
 
       {/* Payoff Diagnostics Summary Cards */}
+
       <div className="bg-bg-surface-raised border border-border-subtle rounded-lg p-6">
         <h3 className="text-lg font-semibold text-text-primary mb-4">{t.payoff.payoffDiagnostics}</h3>
         <div className="grid grid-cols-2 gap-6">

@@ -44,7 +44,8 @@ function App() {
       case 'portfolio':
         return <PortfolioTab t={t} profile={profile} />;
       case 'payoff':
-        return <EarlyPayoffSimulator t={t} profile={profile} />;
+        return <EarlyPayoffSimulator t={t} profile={profile} onUpdateProfile={updateProfile} />;
+
 
       case 'refinance':
         return <RefinanceTab t={t} profile={profile} />;
