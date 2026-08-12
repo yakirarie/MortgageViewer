@@ -539,7 +539,81 @@ describe('getOptimalAllocation', () => {
     // And the Prime track must not receive the entire lump sum.
     expect(allocations['prime'] ?? 0).toBeLessThan(100000);
   });
+
+  it('reduce_payment prefers the highest-relief track over a small-balance Prime track', () => {
+    // Mirrors a real portfolio: a Prime track with a small balance and a rate
+    // history (so its first-step marginal relief is high) alongside larger
+    // Kalatz/Mishtana tracks with manual-override payments and gap penalties.
+    // The relief-per-₪ ranking must steer the lump sum to the track that
+    // actually lowers the monthly payment the most, not to Prime.
+    const prime = makeTrack({
+      track_id: 'prime',
+      custom_name: 'Prime',
+      track_type: 'PRIME',
+      principal_balance: 191162,
+      annual_interest_rate: 0.042,
+      remaining_term_months: 325,
+      monthly_repayment: 985.55,
+      is_payment_manual_override: false,
+      amlat_pearei_ribit: 0,
+      notice_fee: 192,
+      start_date: '2023-09-13',
+      first_payout_date: '2023-10-10',
+      prime_margin: -0.008,
+      original_principal: 200000,
+      original_term_months: 360,
+      rate_history: populatePrimeRateHistory('2023-09-13', -0.008),
+    });
+    const kalatz = makeTrack({
+      track_id: 'kalatz',
+      custom_name: 'Kalatz',
+      track_type: 'FIXED_UNLINKED',
+      principal_balance: 763517,
+      annual_interest_rate: 0.049,
+      remaining_term_months: 325,
+      monthly_repayment: 4245.81,
+      is_payment_manual_override: true,
+      amlat_pearei_ribit: 3283,
+      notice_fee: 767,
+      start_date: '2023-09-13',
+      first_payout_date: '2023-10-10',
+      original_principal: 800000,
+      original_term_months: 360,
+    });
+    const mishtana = makeTrack({
+      track_id: 'mishtana',
+      custom_name: 'Mishtana',
+      track_type: 'VARIABLE_5Y',
+      principal_balance: 382009,
+      annual_interest_rate: 0.0498,
+      remaining_term_months: 325,
+      monthly_repayment: 2141.91,
+      is_payment_manual_override: true,
+      amlat_pearei_ribit: 3275,
+      notice_fee: 384,
+      months_to_reset: 25,
+      start_date: '2023-09-13',
+      first_payout_date: '2023-10-10',
+      original_principal: 400000,
+      original_term_months: 360,
+    });
+
+    const tracks = [prime, kalatz, mishtana];
+    const optimal = getOptimalAllocation(tracks, 100000, 'reduce_payment', false);
+    const allocations: Record<string, number> = {};
+    optimal.forEach((r) => {
+      allocations[r.track_id] = r.allocated;
+    });
+    const summary = computePayoffSummary(tracks, allocations, 'reduce_payment', false);
+
+    // The lump sum must not be dumped into Prime — Mishtana yields the highest
+    // relief-per-₪ and should receive the allocation.
+    expect(allocations['prime'] ?? 0).toBe(0);
+    expect(allocations['mishtana'] ?? 0).toBeGreaterThan(0);
+    expect(summary.monthlyCashflowRelief).toBeGreaterThanOrEqual(550);
+  });
 });
+
 
 
 

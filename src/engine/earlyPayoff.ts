@@ -386,88 +386,93 @@ export function getOptimalAllocation(
     return effectiveMonthlyPayment(tracks[index]) - r.newMonthlyPayment;
   };
 
-  // The primary objective differs by mode:
-  //   - reduce_term (Kitzur Tekufa): maximize net benefit (interest saved −
-  //     penalties). The payment is unchanged, so there is no cashflow relief.
-  //   - reduce_payment (Kitzur Tlash): maximize monthly cashflow relief — the
-  //     whole point of this mode is to lower the monthly payment. Net benefit
-  //     is used as a secondary tie-breaker between equal relief gains.
-  const primaryAt =
-    mode === "reduce_payment" ? cashflowReliefAt : netBenefitAt;
-  const secondaryAt =
-    mode === "reduce_payment" ? netBenefitAt : cashflowReliefAt;
+  if (mode === "reduce_payment") {
+    // -----------------------------------------------------------------------
+    // reduce_payment (Kitzur Tlash): maximize monthly cashflow relief.
+    //
+    // The relief of a track is (to first order) linear in the amount allocated
+    // — the Spitzer payment scales with the balance — so the optimal strategy
+    // is to concentrate the lump sum on the track with the highest relief per
+    // ₪, filling its balance before moving to the next-best track. A step-wise
+    // marginal greedy is *not* appropriate here: it compares the marginal
+    // relief at the current (small) allocation, which for a Prime track with a
+    // small balance is artificially high at the start even though its total
+    // relief over the full lump sum is lower than a larger, higher-rate track.
+    // -----------------------------------------------------------------------
+    const candidates = tracks
+      .map((_track, index) => {
+        const amount = Math.min(remaining, balances[index]);
+        if (amount <= 0) return null;
+        const relief = cashflowReliefAt(index, amount);
+        return {
+          index,
+          amount,
+          relief,
+          perShekel: relief / amount,
+        };
+      })
+      .filter((c): c is NonNullable<typeof c> => c !== null)
+      .sort((a, b) => b.perShekel - a.perShekel);
 
-  // Marginal primary-objective gain of adding one step to a track (0 if it
-  // would exceed balance).
-  const marginalPrimary = (index: number): number => {
-    const current = allocations[index];
-    if (current + step > balances[index] + 1e-9) return 0;
-    return primaryAt(index, current + step) - primaryAt(index, current);
-  };
 
-  // Marginal secondary-objective gain of adding one step to a track.
-  const marginalSecondary = (index: number): number => {
-    const current = allocations[index];
-    if (current + step > balances[index] + 1e-9) return 0;
-    return secondaryAt(index, current + step) - secondaryAt(index, current);
-  };
+    for (const c of candidates) {
+      if (remaining <= 0) break;
+      const amount = Math.min(c.amount, remaining);
+      allocations[c.index] = amount;
+      remaining -= amount;
+    }
+  } else {
+    // -----------------------------------------------------------------------
+    // reduce_term (Kitzur Tekufa): maximize net benefit (interest saved −
+    // penalties). The payment is unchanged, so there is no cashflow relief.
+    // Net benefit is concave (penalties + notice fees create diminishing
+    // returns), so a step-wise marginal greedy is appropriate.
+    // -----------------------------------------------------------------------
+    const netBenefitMarginal = (index: number): number => {
+      const current = allocations[index];
+      if (current + step > balances[index] + 1e-9) return 0;
+      return netBenefitAt(index, current + step) - netBenefitAt(index, current);
+    };
 
-  // Step-wise marginal optimization. The primary objective is selected by mode
-  // above; when two tracks offer an equal marginal primary gain, the one with
-  // the larger marginal secondary gain wins (a tie-breaker).
-  while (remaining >= step) {
-    let bestIndex = -1;
-    let bestPrimary = 0;
-    let bestSecondary = 0;
-    for (let i = 0; i < tracks.length; i++) {
-      const primary = marginalPrimary(i);
-      if (primary <= 0) continue;
-      const secondary = marginalSecondary(i);
-      if (
-        primary > bestPrimary + 1e-9 ||
-        (Math.abs(primary - bestPrimary) <= 1e-9 && secondary > bestSecondary)
-      ) {
-        bestPrimary = primary;
-        bestSecondary = secondary;
-        bestIndex = i;
+    while (remaining >= step) {
+      let bestIndex = -1;
+      let bestGain = 0;
+      for (let i = 0; i < tracks.length; i++) {
+        const gain = netBenefitMarginal(i);
+        if (gain > bestGain + 1e-9) {
+          bestGain = gain;
+          bestIndex = i;
+        }
+      }
+      if (bestIndex < 0) break;
+      allocations[bestIndex] += step;
+      remaining -= step;
+    }
+
+    // Grant any remainder (< one step) to the track with the highest marginal
+    // net-benefit gain at its current allocation, if it improves net benefit.
+    if (remaining > 0) {
+      let bestIndex = -1;
+      let bestGain = 0;
+      for (let i = 0; i < tracks.length; i++) {
+        const current = allocations[i];
+        const amount = Math.min(current + remaining, balances[i]);
+        if (amount <= current) continue;
+        const gain = netBenefitAt(i, amount) - netBenefitAt(i, current);
+        if (gain > bestGain + 1e-9) {
+          bestGain = gain;
+          bestIndex = i;
+        }
+      }
+      if (bestIndex >= 0) {
+        allocations[bestIndex] = Math.min(
+          allocations[bestIndex] + remaining,
+          balances[bestIndex]
+        );
       }
     }
-    // No track can improve the primary objective → stop.
-    if (bestIndex < 0) break;
-    allocations[bestIndex] += step;
-    remaining -= step;
   }
 
-  // Grant any remainder (< one step) to the track with the highest marginal
-  // primary gain at its current allocation, if it improves the primary
-  // objective. The same secondary tie-breaker applies.
-  if (remaining > 0) {
-    let bestIndex = -1;
-    let bestPrimary = 0;
-    let bestSecondary = 0;
-    for (let i = 0; i < tracks.length; i++) {
-      const current = allocations[i];
-      const amount = Math.min(current + remaining, balances[i]);
-      if (amount <= current) continue;
-      const primary = primaryAt(i, amount) - primaryAt(i, current);
-      if (primary <= 0) continue;
-      const secondary = secondaryAt(i, amount) - secondaryAt(i, current);
-      if (
-        primary > bestPrimary + 1e-9 ||
-        (Math.abs(primary - bestPrimary) <= 1e-9 && secondary > bestSecondary)
-      ) {
-        bestPrimary = primary;
-        bestSecondary = secondary;
-        bestIndex = i;
-      }
-    }
-    if (bestIndex >= 0) {
-      allocations[bestIndex] = Math.min(
-        allocations[bestIndex] + remaining,
-        balances[bestIndex]
-      );
-    }
-  }
 
 
 
