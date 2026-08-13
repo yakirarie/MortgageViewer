@@ -411,9 +411,21 @@ export function getOptimalAllocation(
       const reliefAfter = effectiveMonthlyPayment(tracks[index]) - after.newMonthlyPayment;
       return (reliefAfter - reliefBefore) / step;
     }
-    // reduce_term: net lifetime shekel interest saved for adding this step.
+
+    // reduce_term: strictly maximize the marginal NET INTEREST SAVED (in ₪)
+    // per allocation step — NOT months reduced. The efficiency of placing this
+    // ₪1,000 increment into track `index` is
+    //
+    //   Efficiency = (Δ Total Interest Saved − Δ Penalties) / Δ Allocated
+    //
+    // `netBenefit` already equals interestSaved − penalty − noticeFee −
+    // operationalFee, so the marginal net benefit of the step is exactly the
+    // numerator above (the notice/operational fees are included for a complete
+    // cost accounting). Dividing by the constant step size does not change the
+    // ranking across tracks, so we return the raw Δ net benefit.
     return after.netBenefit - before.netBenefit;
   };
+
 
   while (remaining >= step) {
     let bestIndex = -1;
