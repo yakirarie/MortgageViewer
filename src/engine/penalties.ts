@@ -35,11 +35,14 @@ export interface BankPayoffBreakdown {
   interestDifferentialFee: number;
   /** עמלת העדר הודעה מוקדמת — 0.1% of payoff if no advance notice (₪). */
   noNoticeFee: number;
-  /** עמלת פירעון מוקדם — operationalFee + noNoticeFee + interestDifferentialFee (₪). */
+  /** עמלת הצמדה — indexation penalty for CPI-linked tracks (₪). */
+  indexationPenalty: number;
+  /** עמלת פירעון מוקדם — operationalFee + noNoticeFee + interestDifferentialFee + indexationPenalty (₪). */
   totalPenalties: number;
   /** סה"כ יתרה לסילוק — totalOutstandingBalance + totalPenalties (₪). */
   totalSettlementAmount: number;
 }
+
 
 /** Round a number to two decimal places (₪ precision). */
 export function roundTwoDecimals(value: number): number {
@@ -77,6 +80,41 @@ export function calculateMonthlyPayment(
 }
 
 /**
+ * Whether a track is a Variable Rate (Mishtana) track whose rate renegotiates
+ * at a fixed reset date (VARIABLE_5Y / VARIABLE_5Y_LINKED).
+ */
+export function isVariableRateTrack(track: Track): boolean {
+  return track.track_type === "VARIABLE_5Y" || track.track_type === "VARIABLE_5Y_LINKED";
+}
+
+/**
+ * The effective penalty horizon (in months) for a track.
+ *
+ * For Variable Rate (Mishtana) tracks the interest-gap penalty and the BOI
+ * benchmark lookup only apply up to the NEXT rate reset date — the bank cannot
+ * claim a gap beyond the point where the rate renegotiates to market. The
+ * horizon is therefore capped at the months until the next reset:
+ *
+ *   T = min(monthsToNextReset, remainingMonths)
+ *
+ * For all other tracks the horizon is the full remaining term. Returns 0 when
+ * the remaining term is missing/zero.
+ */
+export function getPenaltyHorizon(track: Track): number {
+  const remaining = track.remaining_term_months;
+  if (!Number.isFinite(remaining) || remaining <= 0) return 0;
+
+  if (isVariableRateTrack(track)) {
+    const toReset = track.months_to_reset;
+    if (toReset !== null && Number.isFinite(toReset) && toReset > 0) {
+      return Math.min(toReset, remaining);
+    }
+  }
+  return remaining;
+}
+
+
+/**
  * Compute the full bank-equivalent payoff breakdown for a track.
  *
  * @param track              The track (uses `principal_balance`, `annual_interest_rate`,
@@ -99,9 +137,9 @@ export function calculateTrackPayoffBreakdown(
 ): BankPayoffBreakdown {
   const principal = track.principal_balance;
   const contractRate = track.annual_interest_rate;
-  const remainingMonths = track.remaining_term_months;
 
   // 1. Accrued Interest (mid-month estimation).
+
   const monthlyRate = contractRate / 12;
   const accruedInterest = principal * monthlyRate * (daysSinceLastPayment / 30);
   const totalOutstandingBalance = principal + accruedInterest;
@@ -118,13 +156,19 @@ export function calculateTrackPayoffBreakdown(
   // earned had the loan run to term. When the contract rate exceeds the BOI
   // benchmark, the fee is the present value of the monthly rate differential
   // (contract − benchmark) applied to the prepaid principal, discounted over
-  // the remaining months — the same gap formula the payoff engine uses
+  // the penalty horizon — the same gap formula the payoff engine uses
   // (`fixedTrackGapPenalty`). It is scaled by the payoff ratio for a partial
   // payoff, then reduced by the BOI statutory age discount (20% after 3 years,
   // 30% after 5 years).
+  //
+  // For Variable Rate (Mishtana) tracks the horizon is capped at the months
+  // until the next rate reset (`getPenaltyHorizon`): the bank cannot claim a
+  // gap beyond the point where the rate renegotiates to market. If the contract
+  // rate is at or below the benchmark for that short horizon, the fee is 0.
+  const horizon = getPenaltyHorizon(track);
   let interestDifferentialFee = 0.0;
 
-  if (contractRate > boiAverageRate && payoffAmount > 0) {
+  if (contractRate > boiAverageRate && payoffAmount > 0 && horizon > 0) {
     const elapsedMonths = calculateElapsedMonths(track.start_date);
     const payoffRatio = Math.min(1, payoffAmount / principal);
 
@@ -132,7 +176,7 @@ export function calculateTrackPayoffBreakdown(
       netPrincipalBalance: principal,
       currentRate: contractRate,
       boiAverageRate,
-      remainingMonths,
+      remainingMonths: horizon,
     }) * payoffRatio;
 
     // Apply the BOI statutory age discount (20% after 3 yrs, 30% after 5 yrs).
@@ -143,8 +187,13 @@ export function calculateTrackPayoffBreakdown(
     interestDifferentialFee = rawGap * (1 - discount);
   }
 
+  // 5. Indexation Penalty (Amlat Hatzmada) — for CPI-linked tracks. There is no
+  // stored indexation figure in the profile, so it defaults to 0; it is kept as
+  // a distinct line item so the total always equals the sum of its parts.
+  const indexationPenalty = 0.0;
 
-  const totalPenalties = operationalFee + noNoticeFee + interestDifferentialFee;
+  const totalPenalties =
+    operationalFee + noNoticeFee + interestDifferentialFee + indexationPenalty;
 
   return {
     remainingPrincipal: roundTwoDecimals(principal),
@@ -153,15 +202,21 @@ export function calculateTrackPayoffBreakdown(
     operationalFee: roundTwoDecimals(operationalFee),
     interestDifferentialFee: roundTwoDecimals(interestDifferentialFee),
     noNoticeFee: roundTwoDecimals(noNoticeFee),
+    indexationPenalty: roundTwoDecimals(indexationPenalty),
     totalPenalties: roundTwoDecimals(totalPenalties),
     totalSettlementAmount: roundTwoDecimals(totalOutstandingBalance + totalPenalties),
   };
 }
 
+
 /**
  * Convenience wrapper that derives the BOI benchmark rate for a track from its
- * type and remaining term, then computes the full payoff breakdown. This is the
+ * type and penalty horizon, then computes the full payoff breakdown. This is the
  * single entry point the UI and payoff engine use to auto-calculate penalties.
+ *
+ * For Variable Rate (Mishtana) tracks the benchmark is matched to the months
+ * until the NEXT rate reset (not the full remaining term), because the rate
+ * renegotiates to market at that point and no gap can be claimed beyond it.
  */
 export function calculateTrackPayoffBreakdownAuto(
   track: Track,
@@ -169,7 +224,8 @@ export function calculateTrackPayoffBreakdownAuto(
   hasNotice: boolean,
   daysSinceLastPayment: number = 15
 ): BankPayoffBreakdown {
-  const benchmark = getBoiBenchmarkRate(track.track_type, track.remaining_term_months);
+  const horizon = getPenaltyHorizon(track);
+  const benchmark = getBoiBenchmarkRate(track.track_type, horizon);
   return calculateTrackPayoffBreakdown(
     track,
     payoffAmount,
@@ -178,3 +234,4 @@ export function calculateTrackPayoffBreakdownAuto(
     daysSinceLastPayment
   );
 }
+

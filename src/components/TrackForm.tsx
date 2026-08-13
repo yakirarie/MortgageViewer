@@ -17,8 +17,8 @@ import {
   simulateFixedAmortization,
   nextResetDate,
   monthsToNextReset,
-  totalExitCost,
 } from '../lib/mortgage-math';
+
 
 
 
@@ -737,14 +737,18 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
         <div className="mt-3">
           <label className="block text-sm font-medium text-text-secondary mb-1">
             Total Early Exit Cost (₪)
-            <span className="text-accent-info ml-1 cursor-help" title="Amlat Piraon Mukdam = Amlat Pe'arei Ribit + Notice Fee + Operational Fee.">
+            <span className="text-accent-info ml-1 cursor-help" title="Amlat Piraon Mukdam = Amlat Pe'arei Ribit + Notice Fee + Operational Fee + Indexation Penalty.">
               (?)
             </span>
           </label>
           <div className="w-full bg-bg-surface border border-border-subtle rounded px-3 py-2 text-text-primary font-mono text-right font-tabular-nums opacity-80">
-            {formatCurrency(totalExitCost(track))}
+            {formatCurrency(payoffBreakdown.totalPenalties)}
           </div>
+          <p className="text-text-secondary text-xs mt-1">
+            Sum of the penalty line items above (Amlat Pe'arei Ribit + Notice Fee + Operational Fee + Indexation Penalty).
+          </p>
         </div>
+
 
 
         {/* Next Reset (derived, read-only) */}

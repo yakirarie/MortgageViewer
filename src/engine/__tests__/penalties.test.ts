@@ -6,9 +6,12 @@ import {
   calculateTrackPayoffBreakdown,
   calculateTrackPayoffBreakdownAuto,
   calculateElapsedMonths,
+  getPenaltyHorizon,
+  isVariableRateTrack,
   roundTwoDecimals,
 } from '../penalties';
 import { getOptimalAllocation } from '../earlyPayoff';
+
 
 function makeTrack(overrides: Partial<Track> = {}): Track {
   return {
@@ -70,7 +73,52 @@ describe('roundTwoDecimals', () => {
   });
 });
 
+describe('isVariableRateTrack', () => {
+  it('identifies Variable Rate (Mishtana) tracks', () => {
+    expect(isVariableRateTrack(makeTrack({ track_type: 'VARIABLE_5Y' }))).toBe(true);
+    expect(isVariableRateTrack(makeTrack({ track_type: 'VARIABLE_5Y_LINKED' }))).toBe(true);
+  });
+
+  it('returns false for fixed and prime tracks', () => {
+    expect(isVariableRateTrack(makeTrack({ track_type: 'FIXED_UNLINKED' }))).toBe(false);
+    expect(isVariableRateTrack(makeTrack({ track_type: 'FIXED_LINKED' }))).toBe(false);
+    expect(isVariableRateTrack(makeTrack({ track_type: 'PRIME' }))).toBe(false);
+  });
+});
+
+describe('getPenaltyHorizon', () => {
+  it('uses the full remaining term for non-variable tracks', () => {
+    expect(getPenaltyHorizon(makeTrack({ remaining_term_months: 325 }))).toBe(325);
+  });
+
+  it('caps the horizon at the months until the next reset for variable tracks', () => {
+    // 25 months until reset < 325 remaining → horizon is 25.
+    const track = makeTrack({
+      track_type: 'VARIABLE_5Y',
+      remaining_term_months: 325,
+      months_to_reset: 25,
+    });
+    expect(getPenaltyHorizon(track)).toBe(25);
+  });
+
+  it('uses the remaining term when the reset window is missing or larger', () => {
+    // No reset window → fall back to the full remaining term.
+    expect(
+      getPenaltyHorizon(makeTrack({ track_type: 'VARIABLE_5Y', remaining_term_months: 325, months_to_reset: null }))
+    ).toBe(325);
+    // Reset window larger than the remaining term → capped by the remaining term.
+    expect(
+      getPenaltyHorizon(makeTrack({ track_type: 'VARIABLE_5Y', remaining_term_months: 10, months_to_reset: 25 }))
+    ).toBe(10);
+  });
+
+  it('returns 0 when the remaining term is missing or zero', () => {
+    expect(getPenaltyHorizon(makeTrack({ remaining_term_months: 0 }))).toBe(0);
+  });
+});
+
 describe('calculateTrackPayoffBreakdown', () => {
+
   // Bank Discount payoff-statement benchmark:
   //   Principal: ₪763,240.63 | Contract rate: 5.10% | BOI benchmark: 4.73%
   //   Remaining: 325 months | Elapsed: > 3 years (20% discount) | No notice.
@@ -156,4 +204,79 @@ describe('calculateTrackPayoffBreakdown', () => {
     expect(total).toBeGreaterThan(0);
     expect(total).toBeLessThanOrEqual(100000);
   });
+
+  it('includes the indexation penalty in the total penalties sum', () => {
+    // indexationPenalty is a distinct line item (defaults to 0) and must be
+    // part of the total so the sum always equals its parts.
+    expect(breakdown.indexationPenalty).toBe(0);
+    expect(breakdown.totalPenalties).toBeCloseTo(
+      breakdown.operationalFee +
+        breakdown.noNoticeFee +
+        breakdown.interestDifferentialFee +
+        breakdown.indexationPenalty,
+      2
+    );
+  });
 });
+
+describe('Variable Rate (Mishtana) penalty horizon', () => {
+  // A Mishtana track with 25 months until its next rate reset (10/09/2028) and
+  // 325 months remaining. The gap penalty and benchmark lookup must use the
+  // 25-month horizon, NOT the full remaining term.
+  const mishtana = makeTrack({
+    track_id: 'mishtana',
+    track_type: 'VARIABLE_5Y',
+    principal_balance: 381483,
+    annual_interest_rate: 0.048,
+    remaining_term_months: 325,
+    months_to_reset: 25,
+  });
+
+  it('looks up the benchmark using the reset horizon, not the full remaining term', () => {
+    // 25 months → ≤60-month tier → 0.041 (not the 0.0453 tier for 325 months).
+    expect(getBoiBenchmarkRate('VARIABLE_5Y', 25)).toBeCloseTo(0.041, 6);
+    expect(getBoiBenchmarkRate('VARIABLE_5Y', 325)).toBeCloseTo(0.0453, 6);
+
+    const auto = calculateTrackPayoffBreakdownAuto(mishtana, mishtana.principal_balance, false);
+    // The auto wrapper must match the explicit 25-month benchmark (0.041).
+    const explicit = calculateTrackPayoffBreakdown(mishtana, mishtana.principal_balance, 0.041, false);
+    expect(auto.interestDifferentialFee).toBeCloseTo(explicit.interestDifferentialFee, 2);
+  });
+
+  it('charges a gap penalty when the contract rate exceeds the short-horizon benchmark', () => {
+    // Contract 4.80% > benchmark 4.10% (25-month tier) → a gap penalty is due,
+    // discounted over the 25-month horizon.
+    const auto = calculateTrackPayoffBreakdownAuto(mishtana, mishtana.principal_balance, false);
+    expect(auto.interestDifferentialFee).toBeGreaterThan(0);
+  });
+
+  it('returns 0 gap penalty when the contract rate is at or below the short-horizon benchmark', () => {
+    // Contract 4.00% ≤ benchmark 4.10% (25-month tier) → no gap to compensate.
+    const lowRate = makeTrack({
+      track_id: 'mishtana-low',
+      track_type: 'VARIABLE_5Y',
+      principal_balance: 381483,
+      annual_interest_rate: 0.04,
+      remaining_term_months: 325,
+      months_to_reset: 25,
+    });
+    const auto = calculateTrackPayoffBreakdownAuto(lowRate, lowRate.principal_balance, false);
+    expect(auto.interestDifferentialFee).toBe(0);
+  });
+
+  it('uses the full remaining term when no reset window is set', () => {
+    // Without a reset window the horizon falls back to the full remaining term
+    // (325 months → 0.0453 tier), so a 4.80% contract still incurs a gap.
+    const noReset = makeTrack({
+      track_id: 'mishtana-noreset',
+      track_type: 'VARIABLE_5Y',
+      principal_balance: 381483,
+      annual_interest_rate: 0.048,
+      remaining_term_months: 325,
+      months_to_reset: null,
+    });
+    const auto = calculateTrackPayoffBreakdownAuto(noReset, noReset.principal_balance, false);
+    expect(auto.interestDifferentialFee).toBeGreaterThan(0);
+  });
+});
+
