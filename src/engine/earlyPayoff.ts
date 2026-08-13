@@ -374,107 +374,95 @@ export function getOptimalAllocation(
   const allocations = tracks.map(() => 0);
   let remaining = Math.max(0, lumpSum);
 
-  // Net benefit of a single track at a given allocation.
-  const netBenefitAt = (index: number, amount: number): number =>
-    recalculateTrack(tracks[index], amount, { mode, hasAdvanceNotice }).netBenefit;
+  // -------------------------------------------------------------------------
+  // Unified step-wise marginal optimizer.
+  //
+  // Both modes share the same greedy loop: the lump sum is divided into
+  // ₪1,000 increments and, at each step, the track whose next increment yields
+  // the largest positive marginal gain on the mode's objective receives it.
+  // The loop stops when no track can improve the objective or the lump sum is
+  // exhausted. Any remainder smaller than one step is granted to the track
+  // with the highest marginal gain at its current allocation.
+  //
+  // Objective (mode-aware):
+  //   - reduce_term (Kitzur Tekufa): maximize Net Benefit =
+  //     Σ(interest saved) − Σ(penalties). The payment is unchanged, so there
+  //     is no cashflow relief; the marginal gain is the net lifetime shekel
+  //     interest saved for adding one step.
+  //   - reduce_payment (Kitzur Tlash): maximize monthly cashflow relief. The
+  //     marginal gain is the monthly relief (₪/mo) gained per shekel spent for
+  //     adding one step.
+  //
+  // Because the operational fee (₪60) triggers on the first non-zero increment
+  // of a track, the marginal gain of that first increment already accounts for
+  // it, so the optimizer naturally avoids paying the fee unless worthwhile.
+  // -------------------------------------------------------------------------
 
-  // Monthly cashflow relief of a single track at a given allocation. Only
-  // meaningful in reduce_payment mode (the payment is unchanged in
-  // reduce_term).
-  const cashflowReliefAt = (index: number, amount: number): number => {
-    const r = recalculateTrack(tracks[index], amount, { mode, hasAdvanceNotice });
-    return effectiveMonthlyPayment(tracks[index]) - r.newMonthlyPayment;
+  // Marginal gain of adding one step to track `index` at its current allocation.
+  const marginalGainAt = (index: number): number => {
+    const current = allocations[index];
+    if (current + step > balances[index] + 1e-9) return 0;
+    const before = recalculateTrack(tracks[index], current, { mode, hasAdvanceNotice });
+    const after = recalculateTrack(tracks[index], current + step, { mode, hasAdvanceNotice });
+
+    if (mode === "reduce_payment") {
+      // Monthly cashflow relief (₪/mo) gained per shekel spent for this step.
+      const reliefBefore = effectiveMonthlyPayment(tracks[index]) - before.newMonthlyPayment;
+      const reliefAfter = effectiveMonthlyPayment(tracks[index]) - after.newMonthlyPayment;
+      return (reliefAfter - reliefBefore) / step;
+    }
+    // reduce_term: net lifetime shekel interest saved for adding this step.
+    return after.netBenefit - before.netBenefit;
   };
 
-  if (mode === "reduce_payment") {
-    // -----------------------------------------------------------------------
-    // reduce_payment (Kitzur Tlash): maximize monthly cashflow relief.
-    //
-    // The relief of a track is (to first order) linear in the amount allocated
-    // — the Spitzer payment scales with the balance — so the optimal strategy
-    // is to concentrate the lump sum on the track with the highest relief per
-    // ₪, filling its balance before moving to the next-best track. A step-wise
-    // marginal greedy is *not* appropriate here: it compares the marginal
-    // relief at the current (small) allocation, which for a Prime track with a
-    // small balance is artificially high at the start even though its total
-    // relief over the full lump sum is lower than a larger, higher-rate track.
-    // -----------------------------------------------------------------------
-    const candidates = tracks
-      .map((_track, index) => {
-        const amount = Math.min(remaining, balances[index]);
-        if (amount <= 0) return null;
-        const relief = cashflowReliefAt(index, amount);
-        return {
-          index,
-          amount,
-          relief,
-          perShekel: relief / amount,
-        };
-      })
-      .filter((c): c is NonNullable<typeof c> => c !== null)
-      .sort((a, b) => b.perShekel - a.perShekel);
-
-
-    for (const c of candidates) {
-      if (remaining <= 0) break;
-      const amount = Math.min(c.amount, remaining);
-      allocations[c.index] = amount;
-      remaining -= amount;
-    }
-  } else {
-    // -----------------------------------------------------------------------
-    // reduce_term (Kitzur Tekufa): maximize net benefit (interest saved −
-    // penalties). The payment is unchanged, so there is no cashflow relief.
-    // Net benefit is concave (penalties + notice fees create diminishing
-    // returns), so a step-wise marginal greedy is appropriate.
-    // -----------------------------------------------------------------------
-    const netBenefitMarginal = (index: number): number => {
-      const current = allocations[index];
-      if (current + step > balances[index] + 1e-9) return 0;
-      return netBenefitAt(index, current + step) - netBenefitAt(index, current);
-    };
-
-    while (remaining >= step) {
-      let bestIndex = -1;
-      let bestGain = 0;
-      for (let i = 0; i < tracks.length; i++) {
-        const gain = netBenefitMarginal(i);
-        if (gain > bestGain + 1e-9) {
-          bestGain = gain;
-          bestIndex = i;
-        }
-      }
-      if (bestIndex < 0) break;
-      allocations[bestIndex] += step;
-      remaining -= step;
-    }
-
-    // Grant any remainder (< one step) to the track with the highest marginal
-    // net-benefit gain at its current allocation, if it improves net benefit.
-    if (remaining > 0) {
-      let bestIndex = -1;
-      let bestGain = 0;
-      for (let i = 0; i < tracks.length; i++) {
-        const current = allocations[i];
-        const amount = Math.min(current + remaining, balances[i]);
-        if (amount <= current) continue;
-        const gain = netBenefitAt(i, amount) - netBenefitAt(i, current);
-        if (gain > bestGain + 1e-9) {
-          bestGain = gain;
-          bestIndex = i;
-        }
-      }
-      if (bestIndex >= 0) {
-        allocations[bestIndex] = Math.min(
-          allocations[bestIndex] + remaining,
-          balances[bestIndex]
-        );
+  while (remaining >= step) {
+    let bestIndex = -1;
+    let bestGain = -Infinity;
+    for (let i = 0; i < tracks.length; i++) {
+      const gain = marginalGainAt(i);
+      if (gain > bestGain + 1e-9) {
+        bestGain = gain;
+        bestIndex = i;
       }
     }
+    // If no valid track can accept more funds, or the best marginal gain is
+    // non-positive (an extra increment would reduce the objective), stop.
+    if (bestIndex < 0 || bestGain <= 0) break;
+    allocations[bestIndex] += step;
+    remaining -= step;
   }
 
-
-
+  // Grant any remainder (< one step) to the track with the highest marginal
+  // gain at its current allocation, if it improves the objective.
+  if (remaining > 0) {
+    let bestIndex = -1;
+    let bestGain = -Infinity;
+    for (let i = 0; i < tracks.length; i++) {
+      const current = allocations[i];
+      const amount = Math.min(current + remaining, balances[i]);
+      if (amount <= current) continue;
+      const before = recalculateTrack(tracks[i], current, { mode, hasAdvanceNotice });
+      const after = recalculateTrack(tracks[i], amount, { mode, hasAdvanceNotice });
+      let gain: number;
+      if (mode === "reduce_payment") {
+        const reliefBefore = effectiveMonthlyPayment(tracks[i]) - before.newMonthlyPayment;
+        const reliefAfter = effectiveMonthlyPayment(tracks[i]) - after.newMonthlyPayment;
+        gain = reliefAfter - reliefBefore;
+      } else {
+        gain = after.netBenefit - before.netBenefit;
+      }
+      if (gain > bestGain + 1e-9) {
+        bestGain = gain;
+        bestIndex = i;
+      }
+    }
+    if (bestIndex >= 0) {
+      allocations[bestIndex] = Math.min(
+        allocations[bestIndex] + remaining,
+        balances[bestIndex]
+      );
+    }
+  }
 
   // Build the result list, preserving the input track order.
   const results: AllocationResult[] = [];
@@ -496,6 +484,7 @@ export function getOptimalAllocation(
 
   return results;
 }
+
 
 
 // ---------------------------------------------------------------------------
