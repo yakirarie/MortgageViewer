@@ -1,0 +1,159 @@
+import { describe, it, expect } from 'vitest';
+
+import type { Track } from '../../lib/types';
+import { getBoiBenchmarkRate } from '../../lib/rates-api';
+import {
+  calculateTrackPayoffBreakdown,
+  calculateTrackPayoffBreakdownAuto,
+  calculateElapsedMonths,
+  roundTwoDecimals,
+} from '../penalties';
+import { getOptimalAllocation } from '../earlyPayoff';
+
+function makeTrack(overrides: Partial<Track> = {}): Track {
+  return {
+    track_id: 't1',
+    custom_name: 'Track 1',
+    track_type: 'FIXED_UNLINKED',
+    principal_balance: 763240.63,
+    annual_interest_rate: 0.051,
+    remaining_term_months: 325,
+    monthly_repayment: 0,
+    is_payment_manual_override: false,
+    amlat_pearei_ribit: 0,
+    notice_fee: 0,
+    operational_fee: 60,
+    months_to_reset: null,
+    is_cpi_linked: false,
+    start_date: '2023-01-05',
+    ...overrides,
+  };
+}
+
+describe('getBoiBenchmarkRate', () => {
+  it('returns 0.0473 for a 27-year (325-month) fixed unlinked track', () => {
+    expect(getBoiBenchmarkRate('FIXED_UNLINKED', 325)).toBeCloseTo(0.0473, 6);
+  });
+
+  it('matches the correct duration tier', () => {
+    expect(getBoiBenchmarkRate('FIXED_UNLINKED', 60)).toBeCloseTo(0.043, 6);
+    expect(getBoiBenchmarkRate('FIXED_UNLINKED', 120)).toBeCloseTo(0.045, 6);
+    expect(getBoiBenchmarkRate('FIXED_UNLINKED', 180)).toBeCloseTo(0.046, 6);
+    expect(getBoiBenchmarkRate('FIXED_UNLINKED', 300)).toBeCloseTo(0.047, 6);
+    expect(getBoiBenchmarkRate('FIXED_UNLINKED', 301)).toBeCloseTo(0.0473, 6);
+  });
+
+  it('falls back to the current base rate for an unknown track type', () => {
+    const rate = getBoiBenchmarkRate('UNKNOWN', 325);
+    expect(rate).toBeGreaterThan(0);
+    expect(rate).toBeLessThan(1);
+  });
+});
+
+describe('calculateElapsedMonths', () => {
+  it('returns 0 for missing or invalid dates', () => {
+    expect(calculateElapsedMonths()).toBe(0);
+    expect(calculateElapsedMonths('not-a-date')).toBe(0);
+  });
+
+  it('computes whole months elapsed since a start date', () => {
+    const months = calculateElapsedMonths('2023-01-05');
+    expect(months).toBeGreaterThan(36); // > 3 years → 20% discount bracket
+  });
+});
+
+describe('roundTwoDecimals', () => {
+  it('rounds to two decimal places', () => {
+    expect(roundTwoDecimals(763.24063)).toBe(763.24);
+    expect(roundTwoDecimals(60)).toBe(60);
+    expect(roundTwoDecimals(NaN)).toBe(0);
+  });
+});
+
+describe('calculateTrackPayoffBreakdown', () => {
+  // Bank Discount payoff-statement benchmark:
+  //   Principal: ₪763,240.63 | Contract rate: 5.10% | BOI benchmark: 4.73%
+  //   Remaining: 325 months | Elapsed: > 3 years (20% discount) | No notice.
+  const track = makeTrack();
+  const breakdown = calculateTrackPayoffBreakdown(track, track.principal_balance, 0.0473, false);
+
+  it('reports the remaining principal', () => {
+    expect(breakdown.remainingPrincipal).toBeCloseTo(763240.63, 2);
+  });
+
+  it('charges the statutory ₪60 operational fee', () => {
+    expect(breakdown.operationalFee).toBe(60);
+  });
+
+  it('charges the no-notice fee as 0.1% of the payoff amount', () => {
+    // 0.1% of ₪763,240.63 ≈ ₪763.24
+    expect(breakdown.noNoticeFee).toBeCloseTo(763.24, 2);
+  });
+
+  it('computes a positive interest differential fee with the 20% age discount', () => {
+    // Contract (5.10%) > benchmark (4.73%) → a gap penalty is due.
+    expect(breakdown.interestDifferentialFee).toBeGreaterThan(0);
+
+    // Verify the 20% discount is applied: recompute the raw gap with a fresh
+    // track whose start date is recent (< 3 years → 0% discount) and confirm
+    // the reported fee is 80% of that undiscounted value.
+    const recentTrack = makeTrack({ start_date: new Date().toISOString().slice(0, 10) });
+
+    const rawBreakdown = calculateTrackPayoffBreakdown(
+      recentTrack,
+      recentTrack.principal_balance,
+      0.0473,
+      false
+    );
+    expect(breakdown.interestDifferentialFee).toBeCloseTo(
+      rawBreakdown.interestDifferentialFee * 0.8,
+      0
+    );
+  });
+
+  it('waives the no-notice fee when advance notice is given', () => {
+    const withNotice = calculateTrackPayoffBreakdown(track, track.principal_balance, 0.0473, true);
+    expect(withNotice.noNoticeFee).toBe(0);
+  });
+
+  it('sums penalties and settlement amount correctly', () => {
+    expect(breakdown.totalPenalties).toBeCloseTo(
+      breakdown.operationalFee + breakdown.noNoticeFee + breakdown.interestDifferentialFee,
+      2
+    );
+    // totalSettlementAmount is the rounded sum of the (already rounded)
+    // outstanding balance and penalties, so allow a 1-agora rounding tolerance.
+    expect(breakdown.totalSettlementAmount).toBeCloseTo(
+      breakdown.totalOutstandingBalance + breakdown.totalPenalties,
+      1
+    );
+
+  });
+
+  it('computes accrued interest from the days since the last payment', () => {
+    const b = calculateTrackPayoffBreakdown(track, track.principal_balance, 0.0473, false, 30);
+    const monthlyRate = track.annual_interest_rate / 12;
+    expect(b.accruedInterest).toBeCloseTo(track.principal_balance * monthlyRate, 2);
+  });
+
+  it('derives the benchmark automatically via the Auto wrapper', () => {
+    const auto = calculateTrackPayoffBreakdownAuto(track, track.principal_balance, false);
+    // 325-month fixed unlinked → benchmark 0.0473.
+    const explicit = calculateTrackPayoffBreakdown(track, track.principal_balance, 0.0473, false);
+    expect(auto.interestDifferentialFee).toBeCloseTo(explicit.interestDifferentialFee, 2);
+  });
+
+  it('feeds the auto-calculated penalty into getOptimalAllocation', () => {
+    // The payoff breakdown's interest-differential fee is the same gap penalty
+    // the allocation engine uses. Verify the engine consumes a track whose
+    // penalty is auto-derived (via the benchmark) and produces a valid result.
+    const tracks = [
+      makeTrack({ track_id: 'kalatz', principal_balance: 763240.63, annual_interest_rate: 0.051, remaining_term_months: 325 }),
+      makeTrack({ track_id: 'mishtana', track_type: 'VARIABLE_5Y', principal_balance: 381483, annual_interest_rate: 0.048, remaining_term_months: 325, months_to_reset: 25 }),
+    ];
+    const results = getOptimalAllocation(tracks, 100000, 'reduce_term', false);
+    const total = results.reduce((s, r) => s + r.allocated, 0);
+    expect(total).toBeGreaterThan(0);
+    expect(total).toBeLessThanOrEqual(100000);
+  });
+});

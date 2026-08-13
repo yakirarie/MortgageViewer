@@ -23,7 +23,8 @@ import {
   fixedTrackGapPenalty,
 } from "../lib/mortgage-math";
 
-import { getBoiAverageRate } from "../lib/rates-api";
+import { getBoiBenchmarkRate } from "../lib/rates-api";
+
 
 export type { PayoffReductionMode };
 
@@ -124,8 +125,8 @@ export function yearsElapsedSince(date?: string): number {
  * authoritative figure — scaled proportionally for a partial payoff.
  *
  * `yearsElapsed` defaults to the years elapsed since `track.start_date`.
- * `boiAverageRate` defaults to the average BoI base rate over the track's
- * remaining term.
+ * `boiAverageRate` defaults to the BOI benchmark market rate matched to the
+ * track's type and remaining term (`getBoiBenchmarkRate`).
  */
 export function computeInterestDifferentialPenalty(
   track: Track,
@@ -157,7 +158,9 @@ export function computeInterestDifferentialPenalty(
   }
 
   const boiAvg =
-    opts.boiAverageRate ?? getBoiAverageRate(track.start_date || "");
+    opts.boiAverageRate ??
+    getBoiBenchmarkRate(track.track_type, track.remaining_term_months);
+
 
   const raw = fixedTrackGapPenalty({
     netPrincipalBalance: prepaidPrincipal,

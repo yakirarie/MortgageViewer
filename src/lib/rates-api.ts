@@ -262,10 +262,95 @@ export function getBoiAverageRate(fromDate: string, toDate?: string): number {
   return weightedSum / totalDays;
 }
 
+// ---------------------------------------------------------------------------
+// BOI Benchmark Market Rates (Ribit Mmemotzet) by track type & duration tier
+// ---------------------------------------------------------------------------
+
+/**
+ * Bank of Israel average market interest rates (Ribit Mmemotzet) for new
+ * mortgages, categorized by track type and remaining-duration tier. These are
+ * the benchmark rates used to compute the interest-gap penalty (Amlat Pa'arei
+ * Ribit) when a loan's contract rate exceeds the prevailing market rate.
+ *
+ * Tiers (remaining months): 1–5y (≤60), 5–10y (≤120), 10–15y (≤180),
+ * 15–25y (≤300), 25y+ (>300). Rates are decimals (e.g. 0.0473 = 4.73%).
+ *
+ * Source: Bank of Israel average mortgage interest rates (manually maintained
+ * snapshot, current as of the app's rates-as-of date).
+ */
+export const BOI_BENCHMARK_RATES: Record<
+  string,
+  { maxMonths: number; rate: number }[]
+> = {
+  FIXED_UNLINKED: [
+    { maxMonths: 60, rate: 0.043 },
+    { maxMonths: 120, rate: 0.045 },
+    { maxMonths: 180, rate: 0.046 },
+    { maxMonths: 300, rate: 0.047 },
+    { maxMonths: Infinity, rate: 0.0473 },
+  ],
+  FIXED_LINKED: [
+    { maxMonths: 60, rate: 0.033 },
+    { maxMonths: 120, rate: 0.035 },
+    { maxMonths: 180, rate: 0.036 },
+    { maxMonths: 300, rate: 0.037 },
+    { maxMonths: Infinity, rate: 0.0373 },
+  ],
+  VARIABLE_5Y: [
+    { maxMonths: 60, rate: 0.041 },
+    { maxMonths: 120, rate: 0.043 },
+    { maxMonths: 180, rate: 0.044 },
+    { maxMonths: 300, rate: 0.045 },
+    { maxMonths: Infinity, rate: 0.0453 },
+  ],
+  VARIABLE_5Y_LINKED: [
+    { maxMonths: 60, rate: 0.031 },
+    { maxMonths: 120, rate: 0.033 },
+    { maxMonths: 180, rate: 0.034 },
+    { maxMonths: 300, rate: 0.035 },
+    { maxMonths: Infinity, rate: 0.0353 },
+  ],
+  PRIME: [
+    { maxMonths: 60, rate: 0.05 },
+    { maxMonths: 120, rate: 0.05 },
+    { maxMonths: 180, rate: 0.05 },
+    { maxMonths: 300, rate: 0.05 },
+    { maxMonths: Infinity, rate: 0.05 },
+  ],
+  OTHER: [
+    { maxMonths: 60, rate: 0.043 },
+    { maxMonths: 120, rate: 0.045 },
+    { maxMonths: 180, rate: 0.046 },
+    { maxMonths: 300, rate: 0.047 },
+    { maxMonths: Infinity, rate: 0.0473 },
+  ],
+};
+
+/**
+ * The BOI average market benchmark rate for a track, matched by track type and
+ * remaining duration. Returns the rate for the tier that contains
+ * `remainingMonths` (e.g. 0.0473 for a 27-year / 325-month fixed unlinked
+ * track). Falls back to the current BoI base rate when the track type is
+ * unknown or the remaining term is missing.
+ */
+export function getBoiBenchmarkRate(
+  trackType: string,
+  remainingMonths: number
+): number {
+  const tiers = BOI_BENCHMARK_RATES[trackType];
+  if (!tiers) return getCurrentBaseRate();
+  const months = Number.isFinite(remainingMonths) && remainingMonths > 0 ? remainingMonths : 0;
+  for (const tier of tiers) {
+    if (months <= tier.maxMonths) return tier.rate;
+  }
+  return tiers[tiers.length - 1].rate;
+}
+
 /**
  * Format the last updated timestamp for display
  */
 export function formatLastUpdated(isoString: string): string {
+
 
   const date = new Date(isoString);
   const now = new Date();

@@ -6,7 +6,9 @@ import { formatCurrency, formatCurrencyPrecision, formatPercent, parseCurrencyIn
 
 import { shouldShowResetWindow, getDefaultCpiLinked, getDefaultRate } from '../lib/validation';
 import { TRACK_TYPES } from '../lib/validation';
-import { populatePrimeRateHistory, getPrimeBaseRateAt, primeEffectiveRate, getCurrentBaseRate, PRIME_SPREAD } from '../lib/rates-api';
+import { populatePrimeRateHistory, getPrimeBaseRateAt, primeEffectiveRate, getCurrentBaseRate, PRIME_SPREAD, getBoiBenchmarkRate } from '../lib/rates-api';
+import { calculateTrackPayoffBreakdownAuto } from '../engine/penalties';
+
 
 
 import {
@@ -36,12 +38,8 @@ interface TrackFormProps {
 export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
 
 
-  const handleCurrencyBlur = (field: keyof Track, value: string) => {
-    const parsed = parseCurrencyInput(value);
-    onUpdate({ [field]: parsed });
-  };
-
   const handlePercentBlur = (field: keyof Track, value: string) => {
+
     const parsed = parsePercentInput(value);
     onUpdate({ [field]: parsed });
   };
@@ -206,6 +204,20 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
   const displayTerm = derived ? derived.remainingTermMonths : track.remaining_term_months;
   const displayPayment = derived ? derived.currentMonthlyPayment : track.monthly_repayment;
   const displayTermYears = Math.round(displayTerm / 12);
+
+  // BOI benchmark market rate matched to this track's type & remaining term.
+  // Shown read-only as a reference badge next to the contract rate, and used to
+  // auto-calculate the interest-gap penalty (Amlat Pa'arei Ribit).
+  const boiBenchmarkRate = getBoiBenchmarkRate(track.track_type, displayTerm);
+
+  // Auto-calculated bank-equivalent payoff breakdown (penalties are derived
+  // from the track's raw inputs + BOI benchmark — never entered by hand).
+  const payoffBreakdown = calculateTrackPayoffBreakdownAuto(
+    track,
+    displayNetPrincipal,
+    false
+  );
+
 
   // Derived next-reset date for Variable 5Y tracks (5 years after start, on the
   // monthly payment day). Shown read-only — it is never entered manually.
@@ -570,9 +582,23 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
                 Unusually high rate — double check this value
               </p>
             )}
+
+            {/* BOI benchmark market-rate badge (read-only reference) */}
+            <div className="mt-3 bg-bg-surface-raised border border-border-subtle rounded p-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-text-secondary">BOI benchmark rate ({displayTerm} mo)</span>
+                <span className="font-mono font-tabular-nums text-text-primary">
+                  {formatPercent(boiBenchmarkRate)}
+                </span>
+              </div>
+              <p className="text-text-secondary text-xs mt-1">
+                Bank of Israel average market rate for this track type & remaining term. Used to auto-calculate the interest-gap penalty.
+              </p>
+            </div>
           </div>
         )}
       </div>
+
 
       {/* ============================================================
           Section 3: Auto-Calculated (read-only)
@@ -661,96 +687,38 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
       <div>
         <h4 className="text-sm font-semibold text-text-primary mb-3">Bank Terms</h4>
 
-        {/* Amlat Pe'arei Ribit (Interest Gap Penalty) */}
+        {/* Amlat Pe'arei Ribit (Interest Gap Penalty) — auto-calculated */}
         <div>
           <label className="block text-sm font-medium text-text-secondary mb-1">
             Amlat Pe'arei Ribit (₪)
-            <span className="text-accent-info ml-1 cursor-help" title="Interest gap penalty (Amlat Pe'arei Ribit) — compensates the bank for the interest it would have earned. Always 0 for Prime tracks, which follow the BoI base rate.">
+            <span className="text-accent-info ml-1 cursor-help" title="Interest gap penalty (Amlat Pa'arei Ribit) — auto-calculated from the contract rate vs. the BOI benchmark rate over the remaining term, with the statutory age discount. Always 0 for Prime tracks, which follow the BoI base rate.">
               (?)
             </span>
           </label>
-          {isPrime ? (
-            <>
-              <div className="w-full bg-bg-surface border border-border-subtle rounded px-3 py-2 text-text-primary font-mono text-right font-tabular-nums opacity-80">
-                ₪0
-              </div>
-              <p className="text-text-secondary text-xs mt-1">
-                Prime tracks follow the BoI base rate, so there is no interest gap to compensate on early payoff.
-              </p>
-            </>
-          ) : (
-            <>
-              <div className="flex gap-2">
-                <div className="flex-1 relative">
-                  <input
-                    type="text"
-                    value={formatCurrency(track.amlat_pearei_ribit)}
-                    onChange={(e) => {
-                      const value = e.target.value.replace(/[^\d]/g, '');
-                      onUpdate({ amlat_pearei_ribit: value ? parseFloat(value) : 0 });
-                    }}
-                    onBlur={(e) => handleCurrencyBlur('amlat_pearei_ribit', e.target.value)}
-                    className={`w-full bg-bg-surface border rounded px-3 py-2 text-text-primary focus:outline-none font-mono text-right font-tabular-nums ${
-                      getFieldError('amlat_pearei_ribit') ? 'border-accent-danger' : 'border-border-subtle focus:border-accent-info'
-                    }`}
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    // Estimate penalty using simplified formula from PRD
-                    const estimatedPenalty = Math.max(
-                      0,
-                      displayTotalPayoff *
-                        Math.max(0, track.annual_interest_rate - 0.043) *
-                        (displayTerm / 12) *
-                        0.6
-                    );
-
-                    onUpdate({ amlat_pearei_ribit: estimatedPenalty });
-                  }}
-                  className="px-3 py-2 bg-bg-surface-raised border border-border-subtle rounded text-text-secondary hover:text-text-primary text-sm"
-                  title="Estimate penalty using simplified formula"
-                >
-                  Estimate
-                </button>
-              </div>
-              {getFieldError('amlat_pearei_ribit') && (
-                <p className="text-accent-danger text-xs mt-1">{getFieldError('amlat_pearei_ribit')}</p>
-              )}
-              <p className="text-text-secondary text-xs mt-1">
-                Estimate only. Your bank's actual penalty uses a regulated formula — request the exact figure from your bank.
-              </p>
-            </>
-          )}
+          <div className="w-full bg-bg-surface border border-border-subtle rounded px-3 py-2 text-text-primary font-mono text-right font-tabular-nums opacity-80">
+            {formatCurrency(payoffBreakdown.interestDifferentialFee)}
+          </div>
+          <p className="text-text-secondary text-xs mt-1">
+            Auto-calculated from the contract rate vs. the BOI benchmark rate ({formatPercent(boiBenchmarkRate)}), with the statutory age discount. {isPrime ? 'Prime tracks follow the BoI base rate, so there is no interest gap to compensate on early payoff.' : ''}
+          </p>
         </div>
 
-        {/* Notice Fee (raw input from the bank statement) */}
+        {/* Notice Fee (auto-calculated) */}
         <div className="mt-3">
           <label className="block text-sm font-medium text-text-secondary mb-1">
             Notice Fee (₪)
-            <span className="text-accent-info ml-1 cursor-help" title="Amlat Hoda'a Mukdamet — fee for advance notice. Enter the exact figure from your bank statement.">
+            <span className="text-accent-info ml-1 cursor-help" title="Amlat Hoda'a Mukdamet — 0.1% of the payoff amount unless 10+ days advance notice is given.">
               (?)
             </span>
           </label>
-          <div className="flex-1 relative">
-            <input
-              type="text"
-              value={formatCurrency(track.notice_fee)}
-              onChange={(e) => {
-                const value = e.target.value.replace(/[^\d]/g, '');
-                onUpdate({ notice_fee: value ? parseFloat(value) : 0 });
-              }}
-              onBlur={(e) => handleCurrencyBlur('notice_fee', e.target.value)}
-              className={`w-full bg-bg-surface border rounded px-3 py-2 text-text-primary focus:outline-none font-mono text-right font-tabular-nums ${
-                getFieldError('notice_fee') ? 'border-accent-danger' : 'border-border-subtle focus:border-accent-info'
-              }`}
-            />
+          <div className="w-full bg-bg-surface border border-border-subtle rounded px-3 py-2 text-text-primary font-mono text-right font-tabular-nums opacity-80">
+            {formatCurrency(payoffBreakdown.noNoticeFee)}
           </div>
-          {getFieldError('notice_fee') && (
-            <p className="text-accent-danger text-xs mt-1">{getFieldError('notice_fee')}</p>
-          )}
+          <p className="text-text-secondary text-xs mt-1">
+            0.1% of the payoff amount, waived with 10+ days advance notice.
+          </p>
         </div>
+
 
         {/* Operational Fee (fixed, read-only) */}
         <div className="mt-3">
