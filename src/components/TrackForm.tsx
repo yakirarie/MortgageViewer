@@ -7,7 +7,8 @@ import { formatCurrency, formatCurrencyPrecision, formatPercent, parseCurrencyIn
 import { shouldShowResetWindow, getDefaultCpiLinked, getDefaultRate } from '../lib/validation';
 import { TRACK_TYPES } from '../lib/validation';
 import { populatePrimeRateHistory, getPrimeBaseRateAt, primeEffectiveRate, getCurrentBaseRate, PRIME_SPREAD, getBoiBenchmarkRate } from '../lib/rates-api';
-import { calculateTrackPayoffBreakdownAuto } from '../engine/penalties';
+import { calculateTrackPayoffBreakdownAuto, getPenaltyHorizon } from '../engine/penalties';
+
 
 
 
@@ -205,10 +206,17 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
   const displayPayment = derived ? derived.currentMonthlyPayment : track.monthly_repayment;
   const displayTermYears = Math.round(displayTerm / 12);
 
-  // BOI benchmark market rate matched to this track's type & remaining term.
+  // The penalty horizon (months) used for the BOI benchmark lookup and the
+  // interest-gap penalty. For Variable Rate (Mishtana) tracks this is capped at
+  // the months until the next rate reset (e.g. 25 mo), not the full remaining
+  // term — the rate renegotiates to market at that point.
+  const penaltyHorizon = getPenaltyHorizon(track);
+
+  // BOI benchmark market rate matched to this track's type & penalty horizon.
   // Shown read-only as a reference badge next to the contract rate, and used to
   // auto-calculate the interest-gap penalty (Amlat Pa'arei Ribit).
-  const boiBenchmarkRate = getBoiBenchmarkRate(track.track_type, displayTerm);
+  const boiBenchmarkRate = getBoiBenchmarkRate(track.track_type, penaltyHorizon);
+
 
   // Auto-calculated bank-equivalent payoff breakdown (penalties are derived
   // from the track's raw inputs + BOI benchmark — never entered by hand).
@@ -586,15 +594,16 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
             {/* BOI benchmark market-rate badge (read-only reference) */}
             <div className="mt-3 bg-bg-surface-raised border border-border-subtle rounded p-3 text-sm">
               <div className="flex justify-between">
-                <span className="text-text-secondary">BOI benchmark rate ({displayTerm} mo)</span>
+                <span className="text-text-secondary">BOI benchmark rate ({penaltyHorizon} mo)</span>
                 <span className="font-mono font-tabular-nums text-text-primary">
                   {formatPercent(boiBenchmarkRate)}
                 </span>
               </div>
               <p className="text-text-secondary text-xs mt-1">
-                Bank of Israel average market rate for this track type & remaining term. Used to auto-calculate the interest-gap penalty.
+                Bank of Israel average market rate for this track type & penalty horizon ({penaltyHorizon} mo). Used to auto-calculate the interest-gap penalty.
               </p>
             </div>
+
           </div>
         )}
       </div>
@@ -729,9 +738,10 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
             </span>
           </label>
           <div className="w-full bg-bg-surface border border-border-subtle rounded px-3 py-2 text-text-primary font-mono text-right font-tabular-nums opacity-80">
-            {formatCurrency(track.operational_fee ?? 60)}
+            {formatCurrency(payoffBreakdown.operationalFee)}
           </div>
         </div>
+
 
         {/* Total Early Exit Cost (derived, read-only) */}
         <div className="mt-3">

@@ -217,7 +217,25 @@ describe('calculateTrackPayoffBreakdown', () => {
       2
     );
   });
+
+  it('does NOT zero the total when only the interest-gap fee is 0', () => {
+    // A track whose contract rate is at/below the benchmark has a 0 gap fee,
+    // but the operational + no-notice fees must still be summed into the total.
+    const noGap = makeTrack({ annual_interest_rate: 0.04 }); // 4.00% ≤ 4.73% benchmark
+    const b = calculateTrackPayoffBreakdown(noGap, noGap.principal_balance, 0.0473, false);
+
+    expect(b.interestDifferentialFee).toBe(0);
+    expect(b.operationalFee).toBe(60);
+    expect(b.noNoticeFee).toBeCloseTo(noGap.principal_balance * 0.001, 2);
+    // Total = 60 + no-notice + 0 + 0 — must NOT collapse to 0.
+    expect(b.totalPenalties).toBeCloseTo(
+      b.operationalFee + b.noNoticeFee + b.interestDifferentialFee + b.indexationPenalty,
+      2
+    );
+    expect(b.totalPenalties).toBeGreaterThan(0);
+  });
 });
+
 
 describe('Variable Rate (Mishtana) penalty horizon', () => {
   // A Mishtana track with 25 months until its next rate reset (10/09/2028) and
