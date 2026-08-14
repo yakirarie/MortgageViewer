@@ -752,11 +752,17 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
             </span>
           </label>
           <div className="w-full bg-bg-surface border border-border-subtle rounded px-3 py-2 text-text-primary font-mono text-right font-tabular-nums opacity-80">
-            {formatCurrency(payoffBreakdown.totalPenalties)}
+            {formatCurrency(
+              payoffBreakdown.interestDifferentialFee +
+                payoffBreakdown.noNoticeFee +
+                payoffBreakdown.operationalFee +
+                payoffBreakdown.indexationPenalty
+            )}
           </div>
           <p className="text-text-secondary text-xs mt-1">
             Sum of the penalty line items above (Amlat Pe'arei Ribit + Notice Fee + Operational Fee + Indexation Penalty).
           </p>
+
         </div>
 
 
