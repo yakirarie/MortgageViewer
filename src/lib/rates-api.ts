@@ -272,8 +272,9 @@ export function getBoiAverageRate(fromDate: string, toDate?: string): number {
  * the benchmark rates used to compute the interest-gap penalty (Amlat Pa'arei
  * Ribit) when a loan's contract rate exceeds the prevailing market rate.
  *
- * Tiers (remaining months): 1–5y (≤60), 5–10y (≤120), 10–15y (≤180),
- * 15–25y (≤300), 25y+ (>300). Rates are decimals (e.g. 0.0473 = 4.73%).
+ * Tiers (remaining months): 0–12 (≤1y), 13–60 (1–5y), 61–120 (5–10y),
+ * 121–180 (10–15y), 181–240 (15–20y), 241–420 (>20y). Rates are decimals
+ * (e.g. 0.0473 = 4.73%).
  *
  * Source: Bank of Israel average mortgage interest rates (manually maintained
  * snapshot, current as of the app's rates-as-of date).
@@ -283,60 +284,69 @@ export const BOI_BENCHMARK_RATES: Record<
   { maxMonths: number; rate: number }[]
 > = {
   FIXED_UNLINKED: [
+    { maxMonths: 12, rate: 0.042 },
     { maxMonths: 60, rate: 0.043 },
     { maxMonths: 120, rate: 0.045 },
     { maxMonths: 180, rate: 0.046 },
-    { maxMonths: 300, rate: 0.047 },
-    { maxMonths: Infinity, rate: 0.0473 },
+    { maxMonths: 240, rate: 0.047 },
+    { maxMonths: 420, rate: 0.0473 },
   ],
   FIXED_LINKED: [
+    { maxMonths: 12, rate: 0.032 },
     { maxMonths: 60, rate: 0.033 },
     { maxMonths: 120, rate: 0.035 },
     { maxMonths: 180, rate: 0.036 },
-    { maxMonths: 300, rate: 0.037 },
-    { maxMonths: Infinity, rate: 0.0373 },
+    { maxMonths: 240, rate: 0.037 },
+    { maxMonths: 420, rate: 0.0373 },
   ],
   VARIABLE_5Y: [
+    { maxMonths: 12, rate: 0.04 },
     { maxMonths: 60, rate: 0.041 },
     { maxMonths: 120, rate: 0.043 },
     { maxMonths: 180, rate: 0.044 },
-    { maxMonths: 300, rate: 0.045 },
-    { maxMonths: Infinity, rate: 0.0453 },
+    { maxMonths: 240, rate: 0.045 },
+    { maxMonths: 420, rate: 0.0453 },
   ],
   VARIABLE_5Y_LINKED: [
+    { maxMonths: 12, rate: 0.03 },
     { maxMonths: 60, rate: 0.031 },
     { maxMonths: 120, rate: 0.033 },
     { maxMonths: 180, rate: 0.034 },
-    { maxMonths: 300, rate: 0.035 },
-    { maxMonths: Infinity, rate: 0.0353 },
+    { maxMonths: 240, rate: 0.035 },
+    { maxMonths: 420, rate: 0.0353 },
   ],
   // Bond-anchored variable (משתנה עוגן אג"ח), unlinked. The rate tracks a
   // government bond index rather than the bank's 5-year reset cycle, so the
   // benchmark tiers mirror the variable-rate curve (VARIABLE_5Y) but the
   // penalty horizon is the FULL remaining term (see getPenaltyHorizon).
+  // The >20y tier (241–420 mo) is 4.33% per the BOI average for long unlinked
+  // variable mortgages.
   VARIABLE_BOND_UNLINKED: [
+    { maxMonths: 12, rate: 0.04 },
     { maxMonths: 60, rate: 0.041 },
     { maxMonths: 120, rate: 0.043 },
     { maxMonths: 180, rate: 0.044 },
-    { maxMonths: 300, rate: 0.045 },
-    { maxMonths: Infinity, rate: 0.0453 },
+    { maxMonths: 240, rate: 0.045 },
+    { maxMonths: 420, rate: 0.0433 },
   ],
   PRIME: [
-
+    { maxMonths: 12, rate: 0.05 },
     { maxMonths: 60, rate: 0.05 },
     { maxMonths: 120, rate: 0.05 },
     { maxMonths: 180, rate: 0.05 },
-    { maxMonths: 300, rate: 0.05 },
-    { maxMonths: Infinity, rate: 0.05 },
+    { maxMonths: 240, rate: 0.05 },
+    { maxMonths: 420, rate: 0.05 },
   ],
   OTHER: [
+    { maxMonths: 12, rate: 0.042 },
     { maxMonths: 60, rate: 0.043 },
     { maxMonths: 120, rate: 0.045 },
     { maxMonths: 180, rate: 0.046 },
-    { maxMonths: 300, rate: 0.047 },
-    { maxMonths: Infinity, rate: 0.0473 },
+    { maxMonths: 240, rate: 0.047 },
+    { maxMonths: 420, rate: 0.0473 },
   ],
 };
+
 
 /**
  * The BOI average market benchmark rate for a track, matched by track type and

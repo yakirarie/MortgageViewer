@@ -51,6 +51,21 @@ export function roundTwoDecimals(value: number): number {
 }
 
 /**
+ * Convert a nominal annual rate to an effective annual rate based on monthly
+ * compounding, per Bank of Israel Directive 320 (early-repayment penalties use
+ * compounding interest, r_effective).
+ *
+ * Example: 0.0498 (4.98%) → ~0.050945 (5.10%).
+ *
+ * Returns 0 for non-positive or non-finite inputs.
+ */
+export function convertNominalToEffectiveRate(nominalRateFraction: number): number {
+  if (!Number.isFinite(nominalRateFraction) || nominalRateFraction <= 0) return 0;
+  return Math.pow(1 + nominalRateFraction / 12, 12) - 1;
+}
+
+
+/**
  * The number of whole months elapsed since the track's start date (used to
  * place the track in the correct statutory age-discount bracket). Returns 0
  * when the start date is missing or invalid.
@@ -181,16 +196,23 @@ export function calculateTrackPayoffBreakdown(
   const horizon = getPenaltyHorizon(track);
   let interestDifferentialFee = 0.0;
 
-  if (contractRate > boiAverageRate && payoffAmount > 0 && horizon > 0) {
+  // Per Bank of Israel Directive 320, the interest-gap penalty is computed on
+  // the COMPOUNDING (effective) annual rate, not the nominal rate the bank
+  // quotes on the dashboard. Convert the user's nominal input to r_effective
+  // before evaluating it against the BOI benchmark rate.
+  const effectiveRate = convertNominalToEffectiveRate(contractRate);
+
+  if (effectiveRate > boiAverageRate && payoffAmount > 0 && horizon > 0) {
     const elapsedMonths = calculateElapsedMonths(track.start_date);
     const payoffRatio = Math.min(1, payoffAmount / principal);
 
     const rawGap = fixedTrackGapPenalty({
       netPrincipalBalance: principal,
-      currentRate: contractRate,
+      currentRate: effectiveRate,
       boiAverageRate,
       remainingMonths: horizon,
     }) * payoffRatio;
+
 
     // Apply the BOI statutory age discount (20% after 3 yrs, 30% after 5 yrs).
     let discount = 0.0;
@@ -256,5 +278,63 @@ export function calculateTrackPayoffBreakdownAuto(
     daysSinceLastPayment
   );
 }
+
+/**
+ * The result of the minimal-input penalty flow: given ONLY the surface-level
+ * bank-dashboard inputs (track type, principal balance, nominal annual rate,
+ * remaining term, and optional months-to-next-reset), the engine automatically
+ * converts the nominal rate to its effective (compounding) equivalent, matches
+ * the BOI benchmark tier, and computes the interest-gap penalty and total early
+ * payoff fee.
+ */
+export interface MinimalPayoffResult {
+  /** The effective (compounding) annual rate derived from the nominal input. */
+  effectiveRate: number;
+  /** The BOI benchmark market rate matched to the track's type & horizon tier. */
+  boiBenchmarkRate: number;
+  /** The interest-gap penalty (Amlat Pa'arei Ribit) in ₪. */
+  interestGapPenalty: number;
+  /** The total early payoff fee in ₪ (gap + notice + operational). */
+  totalPayoffFee: number;
+  /** The full bank-equivalent payoff breakdown (all line items). */
+  breakdown: BankPayoffBreakdown;
+}
+
+/**
+ * Compute the full minimal-input penalty result for a track using only the
+ * surface-level bank-dashboard fields. This is the single entry point for the
+ * "minimal friction" flow: the user enters the nominal rate and the engine
+ * handles the nominal→effective conversion, BOI benchmark tier matching, and
+ * penalty math automatically.
+ *
+ * The payoff amount is the full remaining principal and no advance notice is
+ * assumed (so the 0.1% no-notice fee applies), matching a standard early
+ * discharge statement.
+ */
+export function calculateTrackPayoffBreakdownMinimal(track: Track): MinimalPayoffResult {
+  const horizon = getPenaltyHorizon(track);
+  const benchmark =
+    track.boiBenchmarkRateOverride !== undefined &&
+    Number.isFinite(track.boiBenchmarkRateOverride)
+      ? track.boiBenchmarkRateOverride
+      : getBoiBenchmarkRate(track.track_type, horizon);
+
+  const effectiveRate = convertNominalToEffectiveRate(track.annual_interest_rate);
+  const breakdown = calculateTrackPayoffBreakdown(
+    track,
+    track.principal_balance,
+    benchmark,
+    false
+  );
+
+  return {
+    effectiveRate,
+    boiBenchmarkRate: benchmark,
+    interestGapPenalty: breakdown.interestDifferentialFee,
+    totalPayoffFee: breakdown.totalPenalties,
+    breakdown,
+  };
+}
+
 
 

@@ -568,8 +568,9 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
         ) : (
           <div>
             <label className="block text-sm font-medium text-text-secondary mb-1">
-              Annual Interest Rate (%)
+              Annual Interest Rate (%) / ריבית שנתית נומינלית
             </label>
+
             <input
               type="text"
               value={formatPercent(track.annual_interest_rate)}
@@ -604,8 +605,42 @@ export function TrackForm({ track, onUpdate, getFieldError }: TrackFormProps) {
               </p>
             </div>
 
+            {/* Advanced / Debug: manual BOI benchmark override (hidden by default) */}
+            <details className="mt-3">
+              <summary className="text-xs text-text-secondary cursor-pointer hover:text-text-primary">
+                Advanced / Debug — BOI benchmark override
+              </summary>
+              <div className="mt-2 bg-bg-surface-raised border border-border-subtle rounded p-3 text-sm">
+                <label className="block text-sm font-medium text-text-secondary mb-1">
+                  BOI Benchmark Rate Override (%)
+                  <span className="text-accent-info ml-1 cursor-help" title="Optional manual override for the BOI benchmark market rate used in the interest-gap penalty. Leave blank to use the auto-matched tier. Only needed when a bank statement quotes a specific benchmark (e.g. a bond-anchored variable track).">
+                    (?)
+                  </span>
+                </label>
+                <input
+                  type="text"
+                  value={
+                    track.boiBenchmarkRateOverride !== undefined
+                      ? formatPercent(track.boiBenchmarkRateOverride)
+                      : ''
+                  }
+                  placeholder="Auto (tier-matched)"
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/[^\d.]/g, '');
+                    const parsed = value ? parseFloat(value) / 100 : undefined;
+                    onUpdate({ boiBenchmarkRateOverride: parsed });
+                  }}
+                  className="w-full bg-bg-surface border border-border-subtle rounded px-3 py-2 text-text-primary focus:outline-none focus:border-accent-info font-mono text-right font-tabular-nums"
+                />
+                <p className="text-text-secondary text-xs mt-1">
+                  When set, the interest-gap penalty uses this rate instead of the auto-matched tier. Leave blank for the default.
+                </p>
+              </div>
+            </details>
+
           </div>
         )}
+
       </div>
 
 

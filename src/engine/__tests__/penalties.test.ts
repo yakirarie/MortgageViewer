@@ -5,12 +5,17 @@ import { getBoiBenchmarkRate } from '../../lib/rates-api';
 import {
   calculateTrackPayoffBreakdown,
   calculateTrackPayoffBreakdownAuto,
+  calculateTrackPayoffBreakdownMinimal,
   calculateElapsedMonths,
+  convertNominalToEffectiveRate,
   getPenaltyHorizon,
   isVariableRateTrack,
   roundTwoDecimals,
 } from '../penalties';
+
 import { getOptimalAllocation } from '../earlyPayoff';
+import { fixedTrackGapPenalty } from '../../lib/mortgage-math';
+
 
 
 function makeTrack(overrides: Partial<Track> = {}): Track {
@@ -39,12 +44,14 @@ describe('getBoiBenchmarkRate', () => {
   });
 
   it('matches the correct duration tier', () => {
+    expect(getBoiBenchmarkRate('FIXED_UNLINKED', 12)).toBeCloseTo(0.042, 6);
     expect(getBoiBenchmarkRate('FIXED_UNLINKED', 60)).toBeCloseTo(0.043, 6);
     expect(getBoiBenchmarkRate('FIXED_UNLINKED', 120)).toBeCloseTo(0.045, 6);
     expect(getBoiBenchmarkRate('FIXED_UNLINKED', 180)).toBeCloseTo(0.046, 6);
-    expect(getBoiBenchmarkRate('FIXED_UNLINKED', 300)).toBeCloseTo(0.047, 6);
-    expect(getBoiBenchmarkRate('FIXED_UNLINKED', 301)).toBeCloseTo(0.0473, 6);
+    expect(getBoiBenchmarkRate('FIXED_UNLINKED', 240)).toBeCloseTo(0.047, 6);
+    expect(getBoiBenchmarkRate('FIXED_UNLINKED', 241)).toBeCloseTo(0.0473, 6);
   });
+
 
   it('falls back to the current base rate for an unknown track type', () => {
     const rate = getBoiBenchmarkRate('UNKNOWN', 325);
@@ -269,24 +276,25 @@ describe('Bond-anchored variable track (VARIABLE_BOND_UNLINKED) penalty horizon'
     expect(isVariableRateTrack(makeTrack({ track_type: 'VARIABLE_5Y' }))).toBe(true);
   });
 
-  it('uses the full-term benchmark tier (325 mo → 0.0453) by default', () => {
-    expect(getBoiBenchmarkRate('VARIABLE_BOND_UNLINKED', 325)).toBeCloseTo(0.0453, 6);
+  it('uses the full-term benchmark tier (325 mo → 0.0433) by default', () => {
+    expect(getBoiBenchmarkRate('VARIABLE_BOND_UNLINKED', 325)).toBeCloseTo(0.0433, 6);
     expect(getBoiBenchmarkRate('VARIABLE_BOND_UNLINKED', 60)).toBeCloseTo(0.041, 6);
   });
 
   it('honors a manual boiBenchmarkRateOverride instead of the tier lookup', () => {
-    // With the override (0.0433), the auto breakdown must match an explicit
-    // breakdown computed at 0.0433 — and differ from the default 0.0453 tier.
-    const withOverride = makeTrack({ ...bond, boiBenchmarkRateOverride: 0.0433 });
+    // With the override (0.0420), the auto breakdown must match an explicit
+    // breakdown computed at 0.0420 — and differ from the default 0.0433 tier.
+    const withOverride = makeTrack({ ...bond, boiBenchmarkRateOverride: 0.042 });
     const auto = calculateTrackPayoffBreakdownAuto(withOverride, withOverride.principal_balance, false);
-    const explicit = calculateTrackPayoffBreakdown(withOverride, withOverride.principal_balance, 0.0433, false);
-    const defaultTier = calculateTrackPayoffBreakdown(withOverride, withOverride.principal_balance, 0.0453, false);
+    const explicit = calculateTrackPayoffBreakdown(withOverride, withOverride.principal_balance, 0.042, false);
+    const defaultTier = calculateTrackPayoffBreakdown(withOverride, withOverride.principal_balance, 0.0433, false);
 
     expect(auto.interestDifferentialFee).toBeCloseTo(explicit.interestDifferentialFee, 2);
-    // The override (4.33%) is lower than the default tier (4.53%), so the gap is
+    // The override (4.20%) is lower than the default tier (4.33%), so the gap is
     // larger with the override — proving the override is actually used.
     expect(auto.interestDifferentialFee).toBeGreaterThan(defaultTier.interestDifferentialFee);
   });
+
 
   it('sums the line items into totalPenalties (amlat + notice + operational)', () => {
     const withOverride = makeTrack({ ...bond, boiBenchmarkRateOverride: 0.0433 });
@@ -363,4 +371,89 @@ describe('Variable Rate (Mishtana) penalty horizon', () => {
     expect(auto.interestDifferentialFee).toBeGreaterThan(0);
   });
 });
+
+describe('convertNominalToEffectiveRate', () => {
+  it('converts a nominal annual rate to its effective (compounding) equivalent', () => {
+    // 4.98% nominal → ~5.10% effective (monthly compounding).
+    expect(convertNominalToEffectiveRate(0.0498)).toBeCloseTo(0.050953, 5);
+    // 5.00% nominal → ~5.12% effective.
+    expect(convertNominalToEffectiveRate(0.05)).toBeCloseTo(0.051162, 5);
+  });
+
+
+  it('returns 0 for non-positive or non-finite inputs', () => {
+    expect(convertNominalToEffectiveRate(0)).toBe(0);
+    expect(convertNominalToEffectiveRate(-0.01)).toBe(0);
+    expect(convertNominalToEffectiveRate(NaN)).toBe(0);
+    expect(convertNominalToEffectiveRate(Infinity)).toBe(0);
+  });
+});
+
+describe('Minimal Input - Automated Variable Bond Penalty Test', () => {
+  it('calculates exact early payoff fees using only nominal rate and surface inputs', () => {
+    // The user enters ONLY surface-level bank-dashboard data: track type,
+    // principal balance, nominal annual rate, remaining term, and months to
+    // next reset. The engine must automatically:
+    //   1. Convert nominal 4.98% → effective ~5.10%
+    //   2. Map 325 months unlinked → BOI benchmark tier (4.33%)
+    //   3. Compute the interest-gap penalty and total payoff fee.
+    const inputTrack = makeTrack({
+      track_id: 'minimal-bond',
+      track_type: 'VARIABLE_BOND_UNLINKED',
+      principal_balance: 381868.97,
+      annual_interest_rate: 0.0498, // 4.98% nominal input from user
+      remaining_term_months: 325,
+      months_to_reset: 25,
+      start_date: new Date().toISOString().slice(0, 10), // recent → no age discount
+    });
+
+    const result = calculateTrackPayoffBreakdownMinimal(inputTrack);
+
+    // 1. Nominal → effective conversion.
+    expect(result.effectiveRate).toBeCloseTo(0.050945, 4);
+    // 2. BOI benchmark tier for 325-month unlinked variable → 4.33%.
+    expect(result.boiBenchmarkRate).toBeCloseTo(0.0433, 4);
+    // 3. The gap penalty is computed on the effective rate vs. the benchmark.
+    expect(result.interestGapPenalty).toBeGreaterThan(0);
+    // The total payoff fee = gap + notice (0.1%) + operational (₪60).
+    expect(result.totalPayoffFee).toBeCloseTo(
+      result.interestGapPenalty + result.breakdown.noNoticeFee + result.breakdown.operationalFee,
+      2
+    );
+    // The breakdown's gap fee matches the minimal result's gap penalty.
+    expect(result.breakdown.interestDifferentialFee).toBeCloseTo(result.interestGapPenalty, 2);
+  });
+
+  it('uses the effective rate (not nominal) in the gap penalty', () => {
+    // A nominal 4.98% converts to ~5.10% effective. The gap penalty must be
+    // computed on the effective rate, so it must be LARGER than a gap computed
+    // on the nominal rate against the same benchmark.
+    const inputTrack = makeTrack({
+      track_id: 'minimal-bond-2',
+      track_type: 'VARIABLE_BOND_UNLINKED',
+      principal_balance: 381868.97,
+      annual_interest_rate: 0.0498,
+      remaining_term_months: 325,
+      months_to_reset: 25,
+      start_date: new Date().toISOString().slice(0, 10),
+    });
+
+    const result = calculateTrackPayoffBreakdownMinimal(inputTrack);
+
+    // Compute the gap penalty directly on the NOMINAL rate (4.98%) vs. the
+    // benchmark, using the same gap formula the engine applies. Because the
+    // minimal flow converts to the effective rate (~5.10%) internally, its gap
+    // must be strictly larger than the nominal-rate gap.
+    const nominalGap = fixedTrackGapPenalty({
+      netPrincipalBalance: inputTrack.principal_balance,
+      currentRate: inputTrack.annual_interest_rate, // 4.98% nominal
+      boiAverageRate: 0.0433,
+      remainingMonths: 325,
+    });
+
+    expect(result.interestGapPenalty).toBeGreaterThan(nominalGap);
+  });
+});
+
+
 
