@@ -373,10 +373,12 @@ describe("TRACK_TYPES", () => {
       "FIXED_LINKED",
       "VARIABLE_5Y",
       "VARIABLE_5Y_LINKED",
+      "VARIABLE_BOND_UNLINKED",
       "OTHER",
     ]);
   });
 });
+
 
 describe("getTrackTypeDefaults", () => {
   it("returns correct defaults for PRIME", () => {
@@ -414,7 +416,15 @@ describe("getTrackTypeDefaults", () => {
     expect(defaults.isCpiLinked).toBe(true);
   });
 
+  it("returns correct defaults for VARIABLE_BOND_UNLINKED", () => {
+    const defaults = getTrackTypeDefaults("VARIABLE_BOND_UNLINKED");
+    expect(defaults.rate).toBe(0.045);
+    expect(defaults.hasReset).toBe(false); // no 5-year reset window
+    expect(defaults.isCpiLinked).toBe(false);
+  });
+
   it("returns correct defaults for OTHER", () => {
+
     const defaults = getTrackTypeDefaults("OTHER");
     expect(defaults.rate).toBe(0.05);
     expect(defaults.hasReset).toBe(false);

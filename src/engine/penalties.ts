@@ -80,8 +80,13 @@ export function calculateMonthlyPayment(
 }
 
 /**
- * Whether a track is a Variable Rate (Mishtana) track whose rate renegotiates
- * at a fixed reset date (VARIABLE_5Y / VARIABLE_5Y_LINKED).
+ * Whether a track is a bank-indexed Variable Rate (Mishtana) track whose rate
+ * renegotiates at a fixed reset date (VARIABLE_5Y / VARIABLE_5Y_LINKED).
+ *
+ * Bond-anchored variable tracks (VARIABLE_BOND_UNLINKED, משתנה עוגן אג"ח) are
+ * deliberately EXCLUDED: their rate tracks a government bond index rather than
+ * the bank's 5-year reset cycle, so the penalty horizon is the full remaining
+ * term (see getPenaltyHorizon).
  */
 export function isVariableRateTrack(track: Track): boolean {
   return track.track_type === "VARIABLE_5Y" || track.track_type === "VARIABLE_5Y_LINKED";
@@ -90,12 +95,19 @@ export function isVariableRateTrack(track: Track): boolean {
 /**
  * The effective penalty horizon (in months) for a track.
  *
- * For Variable Rate (Mishtana) tracks the interest-gap penalty and the BOI
- * benchmark lookup only apply up to the NEXT rate reset date — the bank cannot
- * claim a gap beyond the point where the rate renegotiates to market. The
- * horizon is therefore capped at the months until the next reset:
+ * For bank-indexed Variable Rate (Mishtana) tracks (VARIABLE_5Y /
+ * VARIABLE_5Y_LINKED) the interest-gap penalty and the BOI benchmark lookup
+ * only apply up to the NEXT rate reset date — the bank cannot claim a gap
+ * beyond the point where the rate renegotiates to market. The horizon is
+ * therefore capped at the months until the next reset:
  *
  *   T = min(monthsToNextReset, remainingMonths)
+ *
+ * Bond-anchored variable tracks (VARIABLE_BOND_UNLINKED, משתנה עוגן אג"ח) are
+ * NOT capped: their rate tracks a government bond index for the life of the
+ * loan, so the bank can claim a gap over the FULL remaining term. The horizon
+ * is therefore the full remaining term (e.g. 325 months), matching the bank
+ * statement.
  *
  * For all other tracks the horizon is the full remaining term. Returns 0 when
  * the remaining term is missing/zero.
@@ -112,6 +124,7 @@ export function getPenaltyHorizon(track: Track): number {
   }
   return remaining;
 }
+
 
 
 /**
@@ -217,6 +230,11 @@ export function calculateTrackPayoffBreakdown(
  * For Variable Rate (Mishtana) tracks the benchmark is matched to the months
  * until the NEXT rate reset (not the full remaining term), because the rate
  * renegotiates to market at that point and no gap can be claimed beyond it.
+ *
+ * When the track carries an explicit `boiBenchmarkRateOverride` (e.g. a bank
+ * statement quotes a specific benchmark for a bond-anchored variable track,
+ * משתנה עוגן אג"ח), that user-supplied rate is used verbatim instead of the
+ * default tier lookup.
  */
 export function calculateTrackPayoffBreakdownAuto(
   track: Track,
@@ -225,7 +243,11 @@ export function calculateTrackPayoffBreakdownAuto(
   daysSinceLastPayment: number = 15
 ): BankPayoffBreakdown {
   const horizon = getPenaltyHorizon(track);
-  const benchmark = getBoiBenchmarkRate(track.track_type, horizon);
+  const benchmark =
+    track.boiBenchmarkRateOverride !== undefined &&
+    Number.isFinite(track.boiBenchmarkRateOverride)
+      ? track.boiBenchmarkRateOverride
+      : getBoiBenchmarkRate(track.track_type, horizon);
   return calculateTrackPayoffBreakdown(
     track,
     payoffAmount,
@@ -234,4 +256,5 @@ export function calculateTrackPayoffBreakdownAuto(
     daysSinceLastPayment
   );
 }
+
 

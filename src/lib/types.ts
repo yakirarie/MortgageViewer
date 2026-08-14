@@ -6,7 +6,9 @@ export type TrackType =
   | "FIXED_LINKED"
   | "VARIABLE_5Y"
   | "VARIABLE_5Y_LINKED"
+  | "VARIABLE_BOND_UNLINKED"
   | "OTHER";
+
 
 /**
  * A single point on a track's historical interest-rate timeline.
@@ -55,7 +57,16 @@ export interface Track {
   original_principal?: number;
   /** Original committed term in months (e.g. 360 for 30 years). */
   original_term_months?: number;
+  /**
+   * Optional manual override for the BOI benchmark market rate (decimal, e.g.
+   * 0.0433 for 4.33%) used in the interest-gap penalty (Amlat Pa'arei Ribit).
+   * When present, the penalty engine uses this user-supplied rate instead of
+   * looking up the default tier table — for cases where the bank quotes a
+   * specific benchmark (e.g. a bond-anchored variable track, משתנה עוגן אג"ח).
+   */
+  boiBenchmarkRateOverride?: number;
 }
+
 
 
 
@@ -69,7 +80,8 @@ export interface Track {
 export interface TrackExportSchema {
   track_id: string;
   custom_name: string;
-  track_type: 'PRIME' | 'FIXED_UNLINKED' | 'VARIABLE_5Y' | 'FIXED_LINKED';
+  track_type: 'PRIME' | 'FIXED_UNLINKED' | 'VARIABLE_5Y' | 'VARIABLE_5Y_LINKED' | 'VARIABLE_BOND_UNLINKED' | 'FIXED_LINKED';
+
   /** Pure amortized principal (₪), before accrued daily interest. */
   net_principal_balance: number;
   /** Accrued daily interest since the last payment date (₪). */

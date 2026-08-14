@@ -237,7 +237,73 @@ describe('calculateTrackPayoffBreakdown', () => {
 });
 
 
+describe('Bond-anchored variable track (VARIABLE_BOND_UNLINKED) penalty horizon', () => {
+  // A bond-anchored variable track (משתנה עוגן אג"ח) tracks a government bond
+  // index for the life of the loan, so the penalty horizon is the FULL remaining
+  // term (325 months) — NOT capped at the next reset date (25 months), unlike a
+  // bank-indexed Mishtana track.
+  const bond = makeTrack({
+    track_id: 'bond',
+    track_type: 'VARIABLE_BOND_UNLINKED',
+    principal_balance: 382080,
+    annual_interest_rate: 0.05,
+    remaining_term_months: 325,
+    months_to_reset: 25,
+    start_date: new Date().toISOString().slice(0, 10), // recent → no age discount
+  });
+
+  it('uses the full remaining term as the penalty horizon, not the reset window', () => {
+    // Even though months_to_reset = 25, the horizon must be the full 325 months.
+    expect(getPenaltyHorizon(bond)).toBe(325);
+    // Contrast: a bank-indexed Mishtana track with the same reset window caps at 25.
+    const mishtana = makeTrack({
+      track_type: 'VARIABLE_5Y',
+      remaining_term_months: 325,
+      months_to_reset: 25,
+    });
+    expect(getPenaltyHorizon(mishtana)).toBe(25);
+  });
+
+  it('is NOT classified as a reset-capped variable-rate track', () => {
+    expect(isVariableRateTrack(bond)).toBe(false);
+    expect(isVariableRateTrack(makeTrack({ track_type: 'VARIABLE_5Y' }))).toBe(true);
+  });
+
+  it('uses the full-term benchmark tier (325 mo → 0.0453) by default', () => {
+    expect(getBoiBenchmarkRate('VARIABLE_BOND_UNLINKED', 325)).toBeCloseTo(0.0453, 6);
+    expect(getBoiBenchmarkRate('VARIABLE_BOND_UNLINKED', 60)).toBeCloseTo(0.041, 6);
+  });
+
+  it('honors a manual boiBenchmarkRateOverride instead of the tier lookup', () => {
+    // With the override (0.0433), the auto breakdown must match an explicit
+    // breakdown computed at 0.0433 — and differ from the default 0.0453 tier.
+    const withOverride = makeTrack({ ...bond, boiBenchmarkRateOverride: 0.0433 });
+    const auto = calculateTrackPayoffBreakdownAuto(withOverride, withOverride.principal_balance, false);
+    const explicit = calculateTrackPayoffBreakdown(withOverride, withOverride.principal_balance, 0.0433, false);
+    const defaultTier = calculateTrackPayoffBreakdown(withOverride, withOverride.principal_balance, 0.0453, false);
+
+    expect(auto.interestDifferentialFee).toBeCloseTo(explicit.interestDifferentialFee, 2);
+    // The override (4.33%) is lower than the default tier (4.53%), so the gap is
+    // larger with the override — proving the override is actually used.
+    expect(auto.interestDifferentialFee).toBeGreaterThan(defaultTier.interestDifferentialFee);
+  });
+
+  it('sums the line items into totalPenalties (amlat + notice + operational)', () => {
+    const withOverride = makeTrack({ ...bond, boiBenchmarkRateOverride: 0.0433 });
+    const b = calculateTrackPayoffBreakdownAuto(withOverride, withOverride.principal_balance, false);
+
+    expect(b.operationalFee).toBe(60);
+    expect(b.noNoticeFee).toBeCloseTo(withOverride.principal_balance * 0.001, 2); // 382.08
+    expect(b.totalPenalties).toBeCloseTo(
+      b.interestDifferentialFee + b.noNoticeFee + b.operationalFee + b.indexationPenalty,
+      2
+    );
+  });
+});
+
+
 describe('Variable Rate (Mishtana) penalty horizon', () => {
+
   // A Mishtana track with 25 months until its next rate reset (10/09/2028) and
   // 325 months remaining. The gap penalty and benchmark lookup must use the
   // 25-month horizon, NOT the full remaining term.

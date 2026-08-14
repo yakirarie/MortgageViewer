@@ -21,6 +21,7 @@ export const TRACK_TYPES: TrackType[] = [
   'FIXED_LINKED',
   'VARIABLE_5Y',
   'VARIABLE_5Y_LINKED',
+  'VARIABLE_BOND_UNLINKED',
   'OTHER',
 ];
 
@@ -31,8 +32,13 @@ const TRACK_TYPE_DEFAULTS: Record<TrackType, { rate: number; hasReset: boolean; 
   FIXED_LINKED: { rate: 0.038, hasReset: false, isCpiLinked: true },
   VARIABLE_5Y: { rate: 0.045, hasReset: true, isCpiLinked: false },
   VARIABLE_5Y_LINKED: { rate: 0.04, hasReset: true, isCpiLinked: true },
+  // Bond-anchored variable (משתנה עוגן אג"ח), unlinked. Tracks a government
+  // bond index for the life of the loan — no 5-year reset window, so the
+  // penalty horizon is the full remaining term (see getPenaltyHorizon).
+  VARIABLE_BOND_UNLINKED: { rate: 0.045, hasReset: false, isCpiLinked: false },
   OTHER: { rate: 0.05, hasReset: false, isCpiLinked: false },
 };
+
 
 export function validateTrack(track: Track): ValidationResult {
   const errors: ValidationError[] = [];

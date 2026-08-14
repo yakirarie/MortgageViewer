@@ -168,8 +168,10 @@ interface Translations {
     FIXED_LINKED: string;
     VARIABLE_5Y: string;
     VARIABLE_5Y_LINKED: string;
+    VARIABLE_BOND_UNLINKED: string;
     OTHER: string;
   };
+
   emptyState: {
     title: string;
     description: string;
@@ -352,8 +354,10 @@ const translations: Record<Language, Translations> = {
       FIXED_LINKED: 'Fixed Linked',
       VARIABLE_5Y: 'Variable 5Y',
       VARIABLE_5Y_LINKED: 'Variable 5Y Linked',
+      VARIABLE_BOND_UNLINKED: 'Variable Bond-Anchored',
       OTHER: 'Other',
     },
+
     emptyState: {
       title: 'No mortgage tracks yet',
       description: 'Add your mortgage tracks to see portfolio diagnostics, early payoff analysis, refinancing breakeven calculations, and personalized recommendations.',
@@ -534,8 +538,10 @@ const translations: Record<Language, Translations> = {
       FIXED_LINKED: 'קבוע מקושר',
       VARIABLE_5Y: 'משתנה 5 שנים',
       VARIABLE_5Y_LINKED: 'משתנה 5 שנים מקושר',
+      VARIABLE_BOND_UNLINKED: 'משתנה עוגן אג"ח',
       OTHER: 'אחר',
     },
+
     emptyState: {
       title: 'אין מסלולי משכנתא עדיין',
       description: 'הוסף את מסלולי המשכנתא שלך כדי לראות אבחון פרופיל, ניתוח פרעון מוקדם, חישוב איזון מיחזור, והמלצות מותאמות אישית.',

@@ -310,7 +310,19 @@ export const BOI_BENCHMARK_RATES: Record<
     { maxMonths: 300, rate: 0.035 },
     { maxMonths: Infinity, rate: 0.0353 },
   ],
+  // Bond-anchored variable (משתנה עוגן אג"ח), unlinked. The rate tracks a
+  // government bond index rather than the bank's 5-year reset cycle, so the
+  // benchmark tiers mirror the variable-rate curve (VARIABLE_5Y) but the
+  // penalty horizon is the FULL remaining term (see getPenaltyHorizon).
+  VARIABLE_BOND_UNLINKED: [
+    { maxMonths: 60, rate: 0.041 },
+    { maxMonths: 120, rate: 0.043 },
+    { maxMonths: 180, rate: 0.044 },
+    { maxMonths: 300, rate: 0.045 },
+    { maxMonths: Infinity, rate: 0.0453 },
+  ],
   PRIME: [
+
     { maxMonths: 60, rate: 0.05 },
     { maxMonths: 120, rate: 0.05 },
     { maxMonths: 180, rate: 0.05 },
